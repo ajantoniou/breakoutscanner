@@ -7,6 +7,10 @@ const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIU
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// Define demo user credentials
+export const DEMO_EMAIL = 'demo@breakoutscanner.com';
+export const DEMO_PASSWORD = 'Demo123!';
+
 // Define types
 export type User = {
   id: string;
@@ -28,6 +32,7 @@ type AuthContextType = {
   updatePassword: (password: string) => Promise<{ error: any }>;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  createDemoUser?: () => Promise<{ error: any, user: any }>;
 };
 
 // Create context
@@ -118,6 +123,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Create demo user
+  const createDemoUser = async () => {
+    try {
+      // Try to sign in with demo credentials first
+      const { error: signInError } = await signIn(DEMO_EMAIL, DEMO_PASSWORD);
+      
+      // If the user doesn't exist, create a new demo user
+      if (signInError) {
+        console.log('Demo user not found, creating new demo user...');
+        return await signUp(DEMO_EMAIL, DEMO_PASSWORD, 'Demo User');
+      }
+      
+      return { error: null, user: null };
+    } catch (error) {
+      console.error('Error creating demo user:', error);
+      return { error, user: null };
+    }
+  };
+
   // Sign out
   const signOut = async () => {
     try {
@@ -173,7 +197,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         resetPassword, 
         updatePassword, 
         isAuthenticated, 
-        isAdmin 
+        isAdmin,
+        createDemoUser
       }}
     >
       {children}
@@ -228,6 +253,43 @@ class AuthService {
     }
   }
 
+  // Create demo user with the credentials from documentation
+  async createDemoUser(): Promise<{ error: any, user: any }> {
+    try {
+      // Check if demo user already exists by trying to sign in
+      const { error: signInError } = await this.signIn(DEMO_EMAIL, DEMO_PASSWORD);
+      
+      // If login fails, create the demo user
+      if (signInError) {
+        console.log('Creating demo user account...');
+        const { data, error } = await supabase.auth.signUp({
+          email: DEMO_EMAIL,
+          password: DEMO_PASSWORD,
+          options: {
+            data: {
+              username: 'Demo User',
+              role: 'user',
+            },
+          },
+        });
+        
+        if (error) {
+          console.error('Error creating demo user:', error);
+          return { error, user: null };
+        }
+        
+        console.log('Demo user created successfully');
+        return { error: null, user: data.user };
+      }
+      
+      console.log('Demo user already exists');
+      return { error: null, user: null };
+    } catch (error) {
+      console.error('Error in createDemoUser:', error);
+      return { error, user: null };
+    }
+  }
+
   // Sign out
   async signOut(): Promise<void> {
     await supabase.auth.signOut();
@@ -235,3 +297,16 @@ class AuthService {
 }
 
 export const authService = new AuthService();
+
+// Create demo user on initial load (in production)
+if (import.meta.env.PROD) {
+  authService.createDemoUser()
+    .then(({ error }) => {
+      if (!error) {
+        console.log('Demo user is ready to use');
+      }
+    })
+    .catch(err => {
+      console.error('Failed to ensure demo user exists:', err);
+    });
+}

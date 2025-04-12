@@ -1,15 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress } from '@mui/material';
+import { DEMO_EMAIL, DEMO_PASSWORD, authService } from '@/services/auth/authService';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [creatingDemo, setCreatingDemo] = useState(false);
   const [success, setSuccess] = useState(false);
   
   const { signIn } = useAuth();
+  
+  // Effect to create demo user on component mount
+  useEffect(() => {
+    const createDemoUserOnMount = async () => {
+      try {
+        console.log('Attempting to create demo user on mount...');
+        await authService.createDemoUser();
+      } catch (err) {
+        console.error('Error ensuring demo user exists:', err);
+      }
+    };
+    
+    createDemoUserOnMount();
+  }, []);
   
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -17,10 +33,10 @@ const Login = () => {
     setLoading(true);
     
     try {
-      const { success, error } = await signIn(email, password);
+      const { error: signInError } = await signIn(email, password);
       
-      if (!success) {
-        throw new Error(error || 'Failed to sign in');
+      if (signInError) {
+        throw new Error(signInError.message || 'Failed to sign in');
       }
       
       setSuccess(true);
@@ -28,6 +44,38 @@ const Login = () => {
       setError(err.message);
     } finally {
       setLoading(false);
+    }
+  };
+  
+  const handleUseDemoCredentials = () => {
+    setEmail(DEMO_EMAIL);
+    setPassword(DEMO_PASSWORD);
+  };
+  
+  const handleCreateDemoAccount = async () => {
+    setCreatingDemo(true);
+    setError('');
+    
+    try {
+      const { error, user } = await authService.createDemoUser();
+      
+      if (error) {
+        throw new Error(error.message || 'Failed to create demo account');
+      }
+      
+      if (user) {
+        setEmail(DEMO_EMAIL);
+        setPassword(DEMO_PASSWORD);
+        alert('Demo account created successfully! You can now log in with the demo credentials.');
+      } else {
+        alert('Demo account already exists. You can use the demo credentials to log in.');
+        setEmail(DEMO_EMAIL);
+        setPassword(DEMO_PASSWORD);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCreatingDemo(false);
     }
   };
   
@@ -102,7 +150,7 @@ const Login = () => {
             sx={{ mt: 3 }}
             disabled={loading}
           >
-            {loading ? <CircularProgress size={24} /> : 'Login'}
+            {loading ? <CircularProgress size={24} /> : 'LOGIN'}
           </Button>
           
           <Box sx={{ mt: 2, textAlign: 'center' }}>
@@ -110,11 +158,33 @@ const Login = () => {
               Demo credentials:
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-              Email: demo@breakoutscanner.com
+              Email: {DEMO_EMAIL}
             </Typography>
             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
-              Password: Demo123!
+              Password: {DEMO_PASSWORD}
             </Typography>
+            
+            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+              <Button
+                variant="outlined"
+                color="primary"
+                size="small"
+                onClick={handleUseDemoCredentials}
+                disabled={loading}
+              >
+                Use Demo Credentials
+              </Button>
+              
+              <Button
+                variant="outlined"
+                color="secondary"
+                size="small"
+                onClick={handleCreateDemoAccount}
+                disabled={loading || creatingDemo}
+              >
+                {creatingDemo ? <CircularProgress size={20} /> : 'Create Demo Account'}
+              </Button>
+            </Box>
           </Box>
         </form>
       </Paper>
