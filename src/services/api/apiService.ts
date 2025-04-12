@@ -545,3 +545,37 @@ export const fetchPerformanceMetrics = async () => {
     };
   }
 };
+
+/**
+ * Generate performance summary
+ * @returns Promise with performance summary
+ */
+export const generatePerformanceSummary = async () => {
+  try {
+    // In a real implementation, this would analyze backtest data and generate insights
+    // For now, return realistic mock data
+    const metrics = await fetchPerformanceMetrics();
+    
+    return {
+      summary: `The backtesting results show an overall win rate of ${metrics.overallWinRate}% with a profit factor of ${metrics.profitFactor}. Bull Flag patterns performed best with a ${metrics.patternPerformance['Bull Flag'].winRate}% win rate and ${metrics.patternPerformance['Bull Flag'].averageProfit}% average profit. Daily timeframes showed the highest reliability with a ${metrics.timeframePerformance['1d'].winRate}% win rate.`,
+      recommendations: [
+        "Focus on Bull Flag and Ascending Triangle patterns for highest probability trades",
+        "Daily timeframe provides the best balance of reliability and opportunity frequency",
+        "Consider using 4-hour timeframe for more frequent trading opportunities with still-strong performance",
+        "Implement multi-timeframe confirmation to boost win rate by approximately 10%"
+      ],
+      improvementAreas: [
+        "Descending Triangle pattern detection could be refined to improve the 71.2% win rate",
+        "15-minute timeframe performance could be improved with additional filters",
+        "Consider adding volume profile analysis to pattern detection"
+      ]
+    };
+  } catch (error) {
+    console.error('Error generating performance summary:', error);
+    return {
+      summary: "Unable to generate performance summary due to an error.",
+      recommendations: [],
+      improvementAreas: []
+    };
+  }
+};
