@@ -191,4 +191,19 @@ class DescendingTriangleDetector {
   }
 }
 
-export default new DescendingTriangleDetector();
+// Create instance of the detector
+const descendingTriangleDetector = new DescendingTriangleDetector();
+
+// Add named export function that matches what apiService.ts is importing
+export const detectDescendingTriangle = (
+  symbol: string,
+  candles: Candle[],
+  timeframe: string,
+  metadata: DataMetadata
+): PatternData[] => {
+  const result = descendingTriangleDetector.detect(symbol, candles, timeframe, metadata);
+  return result.patterns;
+};
+
+// Keep the default export for backward compatibility
+export default descendingTriangleDetector;

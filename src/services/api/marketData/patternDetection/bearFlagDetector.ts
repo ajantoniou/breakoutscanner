@@ -185,4 +185,19 @@ class BearFlagDetector {
   }
 }
 
-export default new BearFlagDetector();
+// Create instance of the detector
+const bearFlagDetector = new BearFlagDetector();
+
+// Add named export function that matches what apiService.ts is importing
+export const detectBearFlag = (
+  symbol: string,
+  candles: Candle[],
+  timeframe: string,
+  metadata: DataMetadata
+): PatternData[] => {
+  const result = bearFlagDetector.detect(symbol, candles, timeframe, metadata);
+  return result.patterns;
+};
+
+// Keep the default export for backward compatibility
+export default bearFlagDetector;

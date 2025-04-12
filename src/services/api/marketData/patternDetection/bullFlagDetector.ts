@@ -185,4 +185,19 @@ class BullFlagDetector {
   }
 }
 
-export default new BullFlagDetector();
+// Create instance of the detector
+const bullFlagDetector = new BullFlagDetector();
+
+// Add named export function that matches what apiService.ts is importing
+export const detectBullFlag = (
+  symbol: string,
+  candles: Candle[],
+  timeframe: string,
+  metadata: DataMetadata
+): PatternData[] => {
+  const result = bullFlagDetector.detect(symbol, candles, timeframe, metadata);
+  return result.patterns;
+};
+
+// Keep the default export for backward compatibility
+export default bullFlagDetector;
