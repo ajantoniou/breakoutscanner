@@ -1,15 +1,52 @@
 import { PatternData } from '@/services/types/patternTypes';
 import { BacktestResult } from '@/services/types/backtestTypes';
-import { fetchStockData } from '@/services/api/marketData/dataService';
-import { ensureDateString } from '@/utils/dateConverter';
+import MarketDataService from '@/services/api/marketData/dataService';
+import { ensureDateString } from '@/utils/dateUtils';
 import { ensureBacktestDirection } from '@/utils/typeSafetyHelpers';
 import { processPolygonDataForBacktest } from '@/services/api/marketData/polygon/dataTransformer';
-import { STOCK_UNIVERSES } from '@/services/api/marketData/stockUniverses';
+import { stockUniverses } from '@/services/api/marketData/stockUniverses';
+import { backtestPatternsWithPolygon } from './polygonBacktestService';
+
+// Create an instance of MarketDataService
+const marketDataService = new MarketDataService();
 
 /**
- * Run backtest on patterns using real historical data
+ * Run backtest on patterns using real historical data with fallback mechanisms
  */
 export const runBacktest = async (
+  patterns: PatternData[],
+  historicalYears: number = 1,
+  apiKey?: string
+): Promise<BacktestResult[]> => {
+  try {
+    console.log(`Running backtest for ${patterns.length} patterns using Polygon.io...`);
+    
+    // First attempt with Polygon (preferred data source)
+    const polygonResults = await backtestPatternsWithPolygon(
+      patterns, 
+      false, 
+      apiKey ? true : false
+    );
+    
+    if (polygonResults && polygonResults.length > 0) {
+      console.log(`Successfully backtested ${polygonResults.length} patterns with Polygon data`);
+      return polygonResults;
+    }
+    
+    // Fallback to legacy implementation
+    console.warn("Polygon backtest failed or returned no results, falling back to legacy implementation");
+    return runLegacyBacktest(patterns, historicalYears, apiKey);
+  } catch (error) {
+    console.error("Error running Polygon backtest:", error);
+    console.warn("Falling back to legacy implementation");
+    return runLegacyBacktest(patterns, historicalYears, apiKey);
+  }
+};
+
+/**
+ * Legacy backtest implementation (fallback method)
+ */
+const runLegacyBacktest = async (
   patterns: PatternData[],
   historicalYears: number = 1,
   apiKey?: string
@@ -22,7 +59,7 @@ export const runBacktest = async (
       const patternCreationDate = new Date(pattern.createdAt);
       
       // Determine if this is a swing trading test (based on symbol and/or timeframe)
-      const isSwingTest = STOCK_UNIVERSES.swingOptions100.includes(pattern.symbol) || 
+      const isSwingTest = stockUniverses.swingTradingUniverse.includes(pattern.symbol) || 
                          ['4h', '1d', 'daily', 'weekly'].includes(pattern.timeframe);
       
       // For swing tests, limit to 6 months to speed up testing
@@ -36,21 +73,32 @@ export const runBacktest = async (
       const fractionalYearMonths = Math.round((yearsToFetch % 1) * 12);
       startDate.setMonth(startDate.getMonth() - fractionalYearMonths);
       
-      // Fetch historical data from the API
-      const historicalData = await fetchStockData(
+      // Use marketDataService to fetch candles
+      const response = await marketDataService.fetchCandles(
         pattern.symbol,
         pattern.timeframe,
-        apiKey || "",
-        1000 // Get enough data points for a good backtest
+        1000, // Get enough data points for a good backtest
+        ensureDateString(startDate),
+        ensureDateString(patternCreationDate),
+        true // Force refresh to get the most accurate data
       );
       
-      if (!historicalData || !historicalData.results || historicalData.results.length === 0) {
+      if (!response.candles || response.candles.length === 0) {
         console.warn(`No historical data found for ${pattern.symbol}`);
         continue;
       }
       
       // Process the data for backtesting
-      const processedData = processPolygonDataForBacktest(historicalData, pattern.symbol);
+      const processedData = response.candles.map(candle => ({
+        date: new Date(candle.timestamp).toISOString(),
+        open: candle.open,
+        high: candle.high,
+        low: candle.low,
+        close: candle.close,
+        volume: candle.volume,
+        rsi: candle.rsi14,
+        atr: candle.atr14
+      }));
       
       // Find entry point index (closest to pattern creation date)
       const entryPointIndex = findClosestDateIndex(
@@ -69,6 +117,9 @@ export const runBacktest = async (
         processedData,
         entryPointIndex
       );
+      
+      // Add data source information
+      result.dataSource = 'legacy';
       
       results.push(result);
     } catch (error) {
@@ -115,7 +166,7 @@ const performBacktest = (
   const entryPrice = pattern.entryPrice;
   const targetPrice = pattern.targetPrice;
   const stopLoss = pattern.stopLoss || (pattern.entryPrice * 0.95); // Default 5% stop loss
-  const direction = pattern.direction || "bullish";
+  const direction = pattern.direction;
   
   // Setup tracking variables
   let exitIndex = -1;
@@ -198,8 +249,8 @@ const performBacktest = (
     historicalData[exitIndex]?.date : 
     new Date().toISOString();
   
-  // Convert direction type to ensure it's "bullish" or "bearish"
-  const predictedDir = direction === "neutral" ? "bullish" : direction as ("bullish" | "bearish");
+  // Ensure direction is valid for BacktestResult
+  const predictedDir = direction as "bullish" | "bearish";
   const oppositeDir = predictedDir === "bullish" ? "bearish" : "bullish";
   
   return {
@@ -228,7 +279,7 @@ const performBacktest = (
 };
 
 /**
- * Backtesting compatibility API
+ * Backtesting API that uses multiple data sources with fallback mechanisms
  */
 export const backtestPatterns = async (
   patterns: PatternData[],

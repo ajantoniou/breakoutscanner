@@ -13,6 +13,7 @@ export interface PatternData {
   stopLoss: number;
   confidenceScore: number;
   createdAt: string;
+  detectedAt?: string;
   status: 'active' | 'completed' | 'failed';
   multiTimeframeConfirmed?: boolean;
   volumeConfirmation?: boolean;

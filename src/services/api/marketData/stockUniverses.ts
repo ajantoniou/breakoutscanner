@@ -6,7 +6,7 @@
  * Day Trading Universe - 20 high-volume stocks with 0 DTE options capability and key indices
  * These stocks are suitable for day trading due to their liquidity and volatility
  */
-export const dayTradingUniverse = [
+const dayTradingUniverse = [
   'SPY',  // S&P 500 ETF
   'QQQ',  // Nasdaq 100 ETF
   'IWM',  // Russell 2000 ETF
@@ -33,7 +33,7 @@ export const dayTradingUniverse = [
  * Swing Trading Universe - 100 high-options-volume stocks with strong volatility profiles
  * These stocks are suitable for swing trading due to their trend behavior and volatility
  */
-export const swingTradingUniverse = [
+const swingTradingUniverse = [
   // Technology
   'AAPL', 'MSFT', 'AMZN', 'GOOGL', 'META', 'TSLA', 'NVDA', 'AMD', 'NFLX', 'INTC',
   'CSCO', 'ORCL', 'IBM', 'ADBE', 'CRM', 'PYPL', 'SQ', 'SHOP', 'TWLO', 'ZM',
@@ -71,14 +71,14 @@ export const swingTradingUniverse = [
  * Golden Scanner Universe - Combination of day and swing trading universes
  * These are the stocks that will be scanned for the highest confidence setups
  */
-export const goldenScannerUniverse = [...new Set([...dayTradingUniverse, ...swingTradingUniverse])];
+const goldenScannerUniverse = [...new Set([...dayTradingUniverse, ...swingTradingUniverse])];
 
 /**
  * Get allowed timeframes for a specific scanner mode
  * @param mode Scanner mode ('day', 'swing', 'golden')
  * @returns Array of allowed timeframe strings
  */
-export const getAllowedTimeframes = (mode: 'day' | 'swing' | 'golden'): string[] => {
+const getAllowedTimeframes = (mode: 'day' | 'swing' | 'golden'): string[] => {
   switch (mode) {
     case 'day':
       return ['1m', '5m', '15m', '30m', '1h'];
@@ -90,3 +90,14 @@ export const getAllowedTimeframes = (mode: 'day' | 'swing' | 'golden'): string[]
       return ['15m', '1h', '4h', '1d'];
   }
 };
+
+// Export as a namespace for stockRecommendationService.ts
+export const stockUniverses = {
+  dayTradingUniverse,
+  swingTradingUniverse,
+  goldenScannerUniverse,
+  getAllowedTimeframes
+};
+
+// Also export individual items to support existing imports
+export { dayTradingUniverse, swingTradingUniverse, goldenScannerUniverse, getAllowedTimeframes };

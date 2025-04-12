@@ -23,6 +23,32 @@ export const formatDate = (date: Date): string => {
 };
 
 /**
+ * Ensure a date is in a consistent string format (YYYY-MM-DD)
+ * @param date Date string or Date object
+ * @returns Formatted date string
+ */
+export const ensureDateString = (date: string | Date): string => {
+  if (!date) return new Date().toISOString().split('T')[0];
+  
+  try {
+    // Convert to Date object if it's a string
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    
+    // If invalid date, return current date
+    if (isNaN(dateObj.getTime())) {
+      console.warn('Invalid date provided to ensureDateString:', date);
+      return new Date().toISOString().split('T')[0];
+    }
+    
+    // Return date in YYYY-MM-DD format
+    return dateObj.toISOString().split('T')[0];
+  } catch (error) {
+    console.error('Error in ensureDateString:', error);
+    return new Date().toISOString().split('T')[0];
+  }
+};
+
+/**
  * Calculate expected breakout time based on detection time, timeframe, and average candles to breakout
  * @param detectionTime Detection timestamp
  * @param timeframe Timeframe string (e.g., '1m', '5m', '1h', '1d')

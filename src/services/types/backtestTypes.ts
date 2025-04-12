@@ -1,4 +1,3 @@
-
 import { PatternData } from "./patternTypes";
 
 export interface BacktestResult {
@@ -11,7 +10,7 @@ export interface BacktestResult {
   stopLoss?: number;
   actualExitPrice: number;
   predictedDirection: "bullish" | "bearish";
-  actualDirection: "bullish" | "bearish";
+  actualDirection: "bullish" | "bearish" | "unknown";
   entryDate: string;
   exitDate: string;
   candlesToBreakout: number;
@@ -27,6 +26,7 @@ export interface BacktestResult {
   macdHistogramAtEntry?: number;
   confidenceScore?: number;
   riskRewardRatio?: number;
+  dataSource?: "polygon" | "yahoo" | "none" | "legacy";
 }
 
 export interface BacktestParameters {
