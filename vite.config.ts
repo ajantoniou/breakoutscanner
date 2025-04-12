@@ -30,6 +30,14 @@ export default defineConfig({
         },
       },
     },
+    // Ensure Vite build works well with Vercel
+    target: 'esnext',
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        drop_console: false,
+      },
+    },
   },
   // Environment variables
   define: {
