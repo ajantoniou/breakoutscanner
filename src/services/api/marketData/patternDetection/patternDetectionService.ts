@@ -4,19 +4,19 @@ import bullFlagDetector from './bullFlagDetector';
 import bearFlagDetector from './bearFlagDetector';
 import ascendingTriangleDetector from './ascendingTriangleDetector';
 import descendingTriangleDetector from './descendingTriangleDetector';
+import breakoutDetector, { BreakoutData } from './breakoutDetector';
 
 /**
- * Pattern Detection Service with timestamp tracking
- * Coordinates pattern detection across different algorithms
+ * Service for detecting chart patterns
  */
 class PatternDetectionService {
   /**
-   * Detect patterns in candle data
+   * Detect all patterns in a set of candles
    * @param symbol Stock symbol
    * @param candles Array of candles
    * @param timeframe Timeframe string
    * @param metadata Data metadata
-   * @returns Array of detected patterns with metadata
+   * @returns Object with detected patterns and updated metadata
    */
   async detectPatterns(
     symbol: string,
@@ -24,41 +24,41 @@ class PatternDetectionService {
     timeframe: string,
     metadata: DataMetadata
   ): Promise<{ patterns: PatternData[], metadata: DataMetadata }> {
-    if (candles.length < 20) {
-      return { 
-        patterns: [], 
-        metadata: {
-          ...metadata,
-          source: 'insufficient_data'
-        } 
-      };
+    if (!candles || candles.length < 20) {
+      console.warn(`Not enough candles for ${symbol} (${timeframe}) to detect patterns`);
+      return { patterns: [], metadata };
     }
-
-    // Run all pattern detectors
-    const bullFlagResult = bullFlagDetector.detect(symbol, candles, timeframe, metadata);
-    const bearFlagResult = bearFlagDetector.detect(symbol, candles, timeframe, metadata);
-    const ascendingTriangleResult = ascendingTriangleDetector.detect(symbol, candles, timeframe, metadata);
-    const descendingTriangleResult = descendingTriangleDetector.detect(symbol, candles, timeframe, metadata);
+    
+    // Get current price
+    const currentPrice = candles[candles.length - 1].close;
+    
+    // Detect patterns
+    const bullFlags = bullFlagDetector.detect(symbol, candles, timeframe, metadata).patterns;
+    const bearFlags = bearFlagDetector.detect(symbol, candles, timeframe, metadata).patterns;
+    const ascendingTriangles = ascendingTriangleDetector.detect(symbol, candles, timeframe, metadata).patterns;
+    const descendingTriangles = descendingTriangleDetector.detect(symbol, candles, timeframe, metadata).patterns;
+    const breakouts = breakoutDetector.detect(symbol, candles, timeframe, metadata).patterns;
     
     // Combine all patterns
     const allPatterns = [
-      ...bullFlagResult.patterns,
-      ...bearFlagResult.patterns,
-      ...ascendingTriangleResult.patterns,
-      ...descendingTriangleResult.patterns
+      ...bullFlags,
+      ...bearFlags,
+      ...ascendingTriangles,
+      ...descendingTriangles,
+      ...breakouts
     ];
     
-    // Combine metadata
+    // Update metadata
     const combinedMetadata = {
       ...metadata,
       patternDetection: {
         timestamp: new Date().toISOString(),
         patternsFound: allPatterns.length,
-        patternTypes: {
-          bullFlag: bullFlagResult.patterns.length,
-          bearFlag: bearFlagResult.patterns.length,
-          ascendingTriangle: ascendingTriangleResult.patterns.length,
-          descendingTriangle: descendingTriangleResult.patterns.length
+        patternCounts: {
+          bullFlag: bullFlags.length,
+          bearFlag: bearFlags.length,
+          ascendingTriangle: ascendingTriangles.length,
+          descendingTriangle: descendingTriangles.length
         }
       }
     };
@@ -207,4 +207,41 @@ class PatternDetectionService {
   }
 }
 
-export default new PatternDetectionService();
+// Create instance of the detector
+const patternDetectionService = new PatternDetectionService();
+
+// Add named export function for detectMultiTimeframePatterns that's imported by patternDetectionManager.ts
+export const detectMultiTimeframePatterns = async (
+  symbol: string,
+  candlesByTimeframe: Record<string, Candle[]>,
+  currentPrice: number
+): Promise<PatternData[]> => {
+  try {
+    // This is a wrapper function that delegates to the main implementation in patternDetectionService.ts
+    // It's needed because patternDetectionManager.ts imports from this location
+    
+    // Process each timeframe
+    const allPatterns: PatternData[] = [];
+    
+    for (const [timeframe, candles] of Object.entries(candlesByTimeframe)) {
+      if (candles.length >= 20) {
+        const metadata = {
+          fetchedAt: new Date().toISOString(),
+          isDelayed: false,
+          source: 'realtime'
+        };
+        
+        const result = await patternDetectionService.detectPatterns(symbol, candles, timeframe, metadata);
+        allPatterns.push(...result.patterns);
+      }
+    }
+    
+    return allPatterns;
+  } catch (error) {
+    console.error(`Error in detectMultiTimeframePatterns for ${symbol}:`, error);
+    return [];
+  }
+};
+
+// Keep the default export for backward compatibility
+export default patternDetectionService;
