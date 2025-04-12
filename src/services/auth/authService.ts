@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { useState, useEffect, createContext, useContext, ReactNode } from 'react';
+import React from 'react';
 
 // Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://ttmeplqmrjhysyqzuaoh.supabase.co';
@@ -35,11 +36,11 @@ type AuthContextType = {
   createDemoUser?: () => Promise<{ error: any, user: any }>;
 };
 
-// Create context
-const AuthContext = createContext<AuthContextType>({} as AuthContextType);
+// Create auth context
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // Auth provider component
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider(props?: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -185,25 +186,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Check if user is admin
   const isAdmin = user?.role === 'admin';
 
-  return (
-    <AuthContext.Provider 
-      value={{ 
-        user, 
-        session, 
-        loading, 
-        signIn, 
-        signUp, 
-        signOut, 
-        resetPassword, 
-        updatePassword, 
-        isAuthenticated, 
-        isAdmin,
-        createDemoUser
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  // Return the context values directly instead of using JSX
+  return { 
+    user, 
+    session, 
+    loading, 
+    signIn, 
+    signUp, 
+    signOut, 
+    resetPassword, 
+    updatePassword, 
+    isAuthenticated, 
+    isAdmin,
+    createDemoUser
+  };
 }
 
 // Custom hook to use auth context

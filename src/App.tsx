@@ -1,6 +1,6 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from '@/contexts/AuthContext';
+import { AuthProviderWrapper as AuthProvider } from '@/services/auth/AuthProviderWrapper';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
 import Login from '@/components/auth/Login';
 import ScannerDashboard from '@/components/scanner/ScannerDashboard';
