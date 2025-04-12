@@ -1,0 +1,6 @@
+project_id = "ttmeplqmrjhysyqzuaoh"
+
+# Supabase configuration file
+
+[functions.polygon-data]
+verify_jwt = false
