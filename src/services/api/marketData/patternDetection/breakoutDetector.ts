@@ -1,11 +1,10 @@
 import { Candle, PatternData } from '@/services/types/patternTypes';
-import { calculateConfidenceScore } from '@/utils/confidenceScoring';
 
 /**
- * Breakout data interface extending PatternData
+ * Interface for breakout pattern data
  */
 export interface BreakoutData extends PatternData {
-  breakoutType: 'horizontal' | 'ascending' | 'descending';
+  breakoutType: 'ascending' | 'descending';
   daysInChannel: number;
   volumeIncrease: number;
 }
@@ -14,262 +13,74 @@ export interface BreakoutData extends PatternData {
  * Detect breakout patterns in candle data
  * @param symbol Stock symbol
  * @param candles Array of candles
- * @param timeframe Timeframe string (e.g., '1m', '5m', '1h', '1d')
- * @param currentPrice Current price of the stock
+ * @param timeframe Timeframe string
  * @returns Array of detected breakout patterns
  */
 export const detectBreakout = (
   symbol: string,
   candles: Candle[],
-  timeframe: string,
-  currentPrice: number
+  timeframe: string
 ): BreakoutData[] => {
-  if (candles.length < 30) return [];
-  
-  const results: BreakoutData[] = [];
-  
-  // Look for different types of breakouts:
-  // 1. Horizontal channel breakout
-  // 2. Ascending channel breakout
-  // 3. Descending channel breakout
-  
-  // Detect horizontal channel breakout
-  const horizontalBreakouts = detectHorizontalChannelBreakout(symbol, candles, timeframe, currentPrice);
-  results.push(...horizontalBreakouts);
-  
-  // Detect ascending channel breakout
-  const ascendingBreakouts = detectAscendingChannelBreakout(symbol, candles, timeframe, currentPrice);
-  results.push(...ascendingBreakouts);
-  
-  // Detect descending channel breakout
-  const descendingBreakouts = detectDescendingChannelBreakout(symbol, candles, timeframe, currentPrice);
-  results.push(...descendingBreakouts);
-  
-  return results;
-};
-
-/**
- * Detect horizontal channel breakout
- * @param symbol Stock symbol
- * @param candles Array of candles
- * @param timeframe Timeframe string
- * @param currentPrice Current price
- * @returns Array of detected horizontal channel breakouts
- */
-const detectHorizontalChannelBreakout = (
-  symbol: string,
-  candles: Candle[],
-  timeframe: string,
-  currentPrice: number
-): BreakoutData[] => {
-  const results: BreakoutData[] = [];
-  
-  // We need at least 30 candles to detect a channel
-  for (let i = 30; i < candles.length; i++) {
-    // Check for horizontal channel over the last 20 candles
-    const channelStart = i - 20;
-    const channelEnd = i - 1;
-    
-    // Get highs and lows in the channel
-    const highs: number[] = [];
-    const lows: number[] = [];
-    
-    for (let j = channelStart; j <= channelEnd; j++) {
-      highs.push(candles[j].high);
-      lows.push(candles[j].low);
-    }
-    
-    // Calculate channel boundaries
-    const upperBoundary = findMostTouchedLevel(highs, 0.5);
-    const lowerBoundary = findMostTouchedLevel(lows, 0.5);
-    
-    // Check if channel is horizontal
-    const highsSlope = calculateSlope(highs);
-    const lowsSlope = calculateSlope(lows);
-    
-    const isHorizontalChannel = Math.abs(highsSlope) < 0.05 && Math.abs(lowsSlope) < 0.05;
-    
-    // Check for breakout
-    const isBullishBreakout = currentPrice > upperBoundary * 1.01; // 1% above upper boundary
-    const isBearishBreakout = currentPrice < lowerBoundary * 0.99; // 1% below lower boundary
-    
-    // Calculate channel height
-    const channelHeight = upperBoundary - lowerBoundary;
-    
-    // Check volume increase
-    const recentVolume = candles[i].volume;
-    const avgVolume = calculateAverageVolume(candles, channelStart, channelEnd);
-    const volumeIncrease = (recentVolume / avgVolume) - 1; // Percentage increase
-    
-    // If we have a valid horizontal channel breakout
-    if (isHorizontalChannel && (isBullishBreakout || isBearishBreakout)) {
-      // Calculate pattern metrics
-      const entry = currentPrice;
-      let target, stopLoss, direction;
-      
-      if (isBullishBreakout) {
-        // Target is typically the channel height added to the breakout point
-        target = entry + channelHeight;
-        // Stop loss is typically below the upper boundary
-        stopLoss = upperBoundary * 0.99; // 1% below upper boundary
-        direction = 'bullish';
-      } else {
-        // Target is typically the channel height subtracted from the breakout point
-        target = entry - channelHeight;
-        // Stop loss is typically above the lower boundary
-        stopLoss = lowerBoundary * 1.01; // 1% above lower boundary
-        direction = 'bearish';
-      }
-      
-      // Calculate risk/reward ratio
-      const risk = direction === 'bullish' ? (entry - stopLoss) : (stopLoss - entry);
-      const reward = direction === 'bullish' ? (target - entry) : (entry - target);
-      const riskRewardRatio = reward / risk;
-      
-      // Calculate potential profit
-      const potentialProfit = direction === 'bullish' 
-        ? ((target - entry) / entry) * 100 
-        : ((entry - target) / entry) * 100;
-      
-      // Calculate days in channel
-      const daysInChannel = calculateDaysInChannel(timeframe, 20); // 20 candles in channel
-      
-      // Calculate confidence score
-      const confidenceFactors = {
-        channelQuality: isHorizontalChannel ? 0.9 : 0.7, // Quality of horizontal channel
-        breakoutStrength: isBullishBreakout || isBearishBreakout ? 0.9 : 0.7, // Strength of breakout
-        volumeConfirmation: volumeIncrease > 0.5 ? 0.9 : 0.7, // Volume confirmation
-        priceAction: 0.9, // Mock value, would be calculated from price action
-        timeframe: getTimeframeWeight(timeframe) // Weight based on timeframe
-      };
-      
-      const confidenceScore = calculateConfidenceScore(confidenceFactors);
-      
-      // Create breakout data
-      const breakout: BreakoutData = {
-        symbol,
-        patternType: 'Channel Breakout',
-        breakoutType: 'horizontal',
-        direction,
-        timeframe,
-        entry,
-        target,
-        stopLoss,
-        riskRewardRatio,
-        potentialProfit,
-        confidenceScore,
-        detectedAt: new Date().toISOString(),
-        multiTimeframeConfirmation: false, // Will be set later if confirmed
-        daysInChannel,
-        volumeIncrease: volumeIncrease * 100 // Convert to percentage
-      };
-      
-      results.push(breakout);
-    }
+  if (!candles || candles.length < 20) {
+    return [];
   }
   
-  return results;
-};
-
-/**
- * Detect ascending channel breakout
- * @param symbol Stock symbol
- * @param candles Array of candles
- * @param timeframe Timeframe string
- * @param currentPrice Current price
- * @returns Array of detected ascending channel breakouts
- */
-const detectAscendingChannelBreakout = (
-  symbol: string,
-  candles: Candle[],
-  timeframe: string,
-  currentPrice: number
-): BreakoutData[] => {
   const results: BreakoutData[] = [];
+  const lookbackPeriod = Math.min(candles.length, 60); // Look back up to 60 candles
   
-  // We need at least 30 candles to detect a channel
-  for (let i = 30; i < candles.length; i++) {
-    // Check for ascending channel over the last 20 candles
-    const channelStart = i - 20;
-    const channelEnd = i - 1;
+  // Get recent candles for analysis
+  const recentCandles = candles.slice(-lookbackPeriod);
+  
+  // Extract highs and lows
+  const highs = recentCandles.map(c => c.high);
+  const lows = recentCandles.map(c => c.low);
+  
+  // Find resistance and support levels
+  const resistanceLevel = findMostTouchedLevel(highs, 0.5); // 0.5% tolerance
+  const supportLevel = findMostTouchedLevel(lows, 0.5);
+  
+  // Current price
+  const currentPrice = candles[candles.length - 1].close;
+  const previousPrice = candles[candles.length - 2].close;
+  
+  // Check for ascending channel breakout (above resistance)
+  if (previousPrice < resistanceLevel && currentPrice > resistanceLevel) {
+    // Calculate days in channel
+    const touchCount = highs.filter(h => Math.abs(h - resistanceLevel) / resistanceLevel < 0.005).length;
+    const daysInChannel = calculateDaysInChannel(timeframe, touchCount);
     
-    // Get highs and lows in the channel
-    const highs: number[] = [];
-    const lows: number[] = [];
+    // Calculate volume increase
+    const avgVolume = calculateAverageVolume(candles, candles.length - 11, candles.length - 2);
+    const currentVolume = candles[candles.length - 1].volume || 0;
+    const volumeIncrease = avgVolume > 0 ? (currentVolume - avgVolume) / avgVolume : 0;
     
-    for (let j = channelStart; j <= channelEnd; j++) {
-      highs.push(candles[j].high);
-      lows.push(candles[j].low);
-    }
+    // Calculate confidence score
+    const pricePercentageMove = (currentPrice - previousPrice) / previousPrice;
+    const volumeWeight = volumeIncrease > 0.5 ? 0.3 : 0.15;
+    const timeframeWeight = getTimeframeWeight(timeframe);
+    const touchWeight = Math.min(touchCount / 10, 0.3);
     
-    // Calculate slopes
-    const highsSlope = calculateSlope(highs);
-    const lowsSlope = calculateSlope(lows);
+    const confidenceScore = Math.min(
+      (pricePercentageMove * 100) + 
+      (volumeIncrease * volumeWeight * 100) + 
+      (timeframeWeight * 100) + 
+      (touchWeight * 100),
+      100
+    );
     
-    // Check if channel is ascending
-    const isAscendingChannel = highsSlope > 0.1 && lowsSlope > 0.1;
+    // Calculate potential profit and stop loss
+    const channelHeight = resistanceLevel - supportLevel;
+    const target = currentPrice + channelHeight;
+    const stopLoss = supportLevel;
+    const potentialProfit = (target - currentPrice) / currentPrice;
+    const potentialLoss = (currentPrice - stopLoss) / currentPrice;
+    const riskRewardRatio = potentialLoss > 0 ? potentialProfit / potentialLoss : 0;
     
-    // Calculate channel boundaries at the end of the channel
-    const upperBoundary = calculateTrendlineValue(highs, channelEnd - channelStart);
-    const lowerBoundary = calculateTrendlineValue(lows, channelEnd - channelStart);
-    
-    // Check for breakout
-    const isBullishBreakout = currentPrice > upperBoundary * 1.01; // 1% above upper boundary
-    const isBearishBreakout = currentPrice < lowerBoundary * 0.99; // 1% below lower boundary
-    
-    // Calculate channel height
-    const channelHeight = upperBoundary - lowerBoundary;
-    
-    // Check volume increase
-    const recentVolume = candles[i].volume;
-    const avgVolume = calculateAverageVolume(candles, channelStart, channelEnd);
-    const volumeIncrease = (recentVolume / avgVolume) - 1; // Percentage increase
-    
-    // If we have a valid ascending channel breakout
-    if (isAscendingChannel && (isBullishBreakout || isBearishBreakout)) {
-      // Calculate pattern metrics
+    // Only add if risk/reward is favorable
+    if (riskRewardRatio >= 1.5) {
+      const direction = 'long';
       const entry = currentPrice;
-      let target, stopLoss, direction;
       
-      if (isBullishBreakout) {
-        // Target is typically the channel height added to the breakout point
-        target = entry + channelHeight;
-        // Stop loss is typically below the upper boundary
-        stopLoss = upperBoundary * 0.99; // 1% below upper boundary
-        direction = 'bullish';
-      } else {
-        // Target is typically the channel height subtracted from the breakout point
-        target = entry - channelHeight;
-        // Stop loss is typically above the lower boundary
-        stopLoss = lowerBoundary * 1.01; // 1% above lower boundary
-        direction = 'bearish';
-      }
-      
-      // Calculate risk/reward ratio
-      const risk = direction === 'bullish' ? (entry - stopLoss) : (stopLoss - entry);
-      const reward = direction === 'bullish' ? (target - entry) : (entry - target);
-      const riskRewardRatio = reward / risk;
-      
-      // Calculate potential profit
-      const potentialProfit = direction === 'bullish' 
-        ? ((target - entry) / entry) * 100 
-        : ((entry - target) / entry) * 100;
-      
-      // Calculate days in channel
-      const daysInChannel = calculateDaysInChannel(timeframe, 20); // 20 candles in channel
-      
-      // Calculate confidence score
-      const confidenceFactors = {
-        channelQuality: isAscendingChannel ? 0.9 : 0.7, // Quality of ascending channel
-        breakoutStrength: isBullishBreakout || isBearishBreakout ? 0.9 : 0.7, // Strength of breakout
-        volumeConfirmation: volumeIncrease > 0.5 ? 0.9 : 0.7, // Volume confirmation
-        priceAction: 0.9, // Mock value, would be calculated from price action
-        timeframe: getTimeframeWeight(timeframe) // Weight based on timeframe
-      };
-      
-      const confidenceScore = calculateConfidenceScore(confidenceFactors);
-      
-      // Create breakout data
       const breakout: BreakoutData = {
         symbol,
         patternType: 'Channel Breakout',
@@ -292,108 +103,44 @@ const detectAscendingChannelBreakout = (
     }
   }
   
-  return results;
-};
-
-/**
- * Detect descending channel breakout
- * @param symbol Stock symbol
- * @param candles Array of candles
- * @param timeframe Timeframe string
- * @param currentPrice Current price
- * @returns Array of detected descending channel breakouts
- */
-const detectDescendingChannelBreakout = (
-  symbol: string,
-  candles: Candle[],
-  timeframe: string,
-  currentPrice: number
-): BreakoutData[] => {
-  const results: BreakoutData[] = [];
-  
-  // We need at least 30 candles to detect a channel
-  for (let i = 30; i < candles.length; i++) {
-    // Check for descending channel over the last 20 candles
-    const channelStart = i - 20;
-    const channelEnd = i - 1;
+  // Check for descending channel breakout (below support)
+  if (previousPrice > supportLevel && currentPrice < supportLevel) {
+    // Calculate days in channel
+    const touchCount = lows.filter(l => Math.abs(l - supportLevel) / supportLevel < 0.005).length;
+    const daysInChannel = calculateDaysInChannel(timeframe, touchCount);
     
-    // Get highs and lows in the channel
-    const highs: number[] = [];
-    const lows: number[] = [];
+    // Calculate volume increase
+    const avgVolume = calculateAverageVolume(candles, candles.length - 11, candles.length - 2);
+    const currentVolume = candles[candles.length - 1].volume || 0;
+    const volumeIncrease = avgVolume > 0 ? (currentVolume - avgVolume) / avgVolume : 0;
     
-    for (let j = channelStart; j <= channelEnd; j++) {
-      highs.push(candles[j].high);
-      lows.push(candles[j].low);
-    }
+    // Calculate confidence score
+    const pricePercentageMove = (previousPrice - currentPrice) / previousPrice;
+    const volumeWeight = volumeIncrease > 0.5 ? 0.3 : 0.15;
+    const timeframeWeight = getTimeframeWeight(timeframe);
+    const touchWeight = Math.min(touchCount / 10, 0.3);
     
-    // Calculate slopes
-    const highsSlope = calculateSlope(highs);
-    const lowsSlope = calculateSlope(lows);
+    const confidenceScore = Math.min(
+      (pricePercentageMove * 100) + 
+      (volumeIncrease * volumeWeight * 100) + 
+      (timeframeWeight * 100) + 
+      (touchWeight * 100),
+      100
+    );
     
-    // Check if channel is descending
-    const isDescendingChannel = highsSlope < -0.1 && lowsSlope < -0.1;
+    // Calculate potential profit and stop loss
+    const channelHeight = resistanceLevel - supportLevel;
+    const target = currentPrice - channelHeight;
+    const stopLoss = resistanceLevel;
+    const potentialProfit = (currentPrice - target) / currentPrice;
+    const potentialLoss = (stopLoss - currentPrice) / currentPrice;
+    const riskRewardRatio = potentialLoss > 0 ? potentialProfit / potentialLoss : 0;
     
-    // Calculate channel boundaries at the end of the channel
-    const upperBoundary = calculateTrendlineValue(highs, channelEnd - channelStart);
-    const lowerBoundary = calculateTrendlineValue(lows, channelEnd - channelStart);
-    
-    // Check for breakout
-    const isBullishBreakout = currentPrice > upperBoundary * 1.01; // 1% above upper boundary
-    const isBearishBreakout = currentPrice < lowerBoundary * 0.99; // 1% below lower boundary
-    
-    // Calculate channel height
-    const channelHeight = upperBoundary - lowerBoundary;
-    
-    // Check volume increase
-    const recentVolume = candles[i].volume;
-    const avgVolume = calculateAverageVolume(candles, channelStart, channelEnd);
-    const volumeIncrease = (recentVolume / avgVolume) - 1; // Percentage increase
-    
-    // If we have a valid descending channel breakout
-    if (isDescendingChannel && (isBullishBreakout || isBearishBreakout)) {
-      // Calculate pattern metrics
+    // Only add if risk/reward is favorable
+    if (riskRewardRatio >= 1.5) {
+      const direction = 'short';
       const entry = currentPrice;
-      let target, stopLoss, direction;
       
-      if (isBullishBreakout) {
-        // Target is typically the channel height added to the breakout point
-        target = entry + channelHeight;
-        // Stop loss is typically below the upper boundary
-        stopLoss = upperBoundary * 0.99; // 1% below upper boundary
-        direction = 'bullish';
-      } else {
-        // Target is typically the channel height subtracted from the breakout point
-        target = entry - channelHeight;
-        // Stop loss is typically above the lower boundary
-        stopLoss = lowerBoundary * 1.01; // 1% above lower boundary
-        direction = 'bearish';
-      }
-      
-      // Calculate risk/reward ratio
-      const risk = direction === 'bullish' ? (entry - stopLoss) : (stopLoss - entry);
-      const reward = direction === 'bullish' ? (target - entry) : (entry - target);
-      const riskRewardRatio = reward / risk;
-      
-      // Calculate potential profit
-      const potentialProfit = direction === 'bullish' 
-        ? ((target - entry) / entry) * 100 
-        : ((entry - target) / entry) * 100;
-      
-      // Calculate days in channel
-      const daysInChannel = calculateDaysInChannel(timeframe, 20); // 20 candles in channel
-      
-      // Calculate confidence score
-      const confidenceFactors = {
-        channelQuality: isDescendingChannel ? 0.9 : 0.7, // Quality of descending channel
-        breakoutStrength: isBullishBreakout || isBearishBreakout ? 0.9 : 0.7, // Strength of breakout
-        volumeConfirmation: volumeIncrease > 0.5 ? 0.9 : 0.7, // Volume confirmation
-        priceAction: 0.9, // Mock value, would be calculated from price action
-        timeframe: getTimeframeWeight(timeframe) // Weight based on timeframe
-      };
-      
-      const confidenceScore = calculateConfidenceScore(confidenceFactors);
-      
-      // Create breakout data
       const breakout: BreakoutData = {
         symbol,
         patternType: 'Channel Breakout',
@@ -605,3 +352,11 @@ const getTimeframeWeight = (timeframe: string): number => {
       return 0.7;
   }
 };
+
+// Create a default export object that includes the detectBreakout function
+// This matches the pattern used in other detector files and fixes the import in patternDetectionService.ts
+const breakoutDetector = {
+  detect: detectBreakout
+};
+
+export default breakoutDetector;
