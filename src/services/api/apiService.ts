@@ -382,3 +382,166 @@ export const testApiConnection = async (): Promise<boolean> => {
     return false;
   }
 };
+
+/**
+ * Fetch backtest results
+ * @returns Promise with backtest results
+ */
+export const fetchBacktestResults = async () => {
+  try {
+    // In a real implementation, this would fetch from Supabase
+    // For now, return realistic mock data
+    return [
+      {
+        id: '1',
+        patternType: 'Bull Flag',
+        symbol: 'AAPL',
+        timeframe: '1d',
+        entryDate: '2024-03-15',
+        exitDate: '2024-03-22',
+        entryPrice: 172.45,
+        exitPrice: 183.79,
+        profit: 6.58,
+        success: true,
+        holdingPeriod: 7,
+        confidenceScore: 87
+      },
+      {
+        id: '2',
+        patternType: 'Ascending Triangle',
+        symbol: 'MSFT',
+        timeframe: '4h',
+        entryDate: '2024-03-18',
+        exitDate: '2024-03-21',
+        entryPrice: 415.23,
+        exitPrice: 432.65,
+        profit: 4.19,
+        success: true,
+        holdingPeriod: 3,
+        confidenceScore: 92
+      },
+      {
+        id: '3',
+        patternType: 'Bear Flag',
+        symbol: 'META',
+        timeframe: '1d',
+        entryDate: '2024-02-28',
+        exitDate: '2024-03-07',
+        entryPrice: 485.12,
+        exitPrice: 465.34,
+        profit: 4.08,
+        success: true,
+        holdingPeriod: 8,
+        confidenceScore: 84
+      },
+      {
+        id: '4',
+        patternType: 'Descending Triangle',
+        symbol: 'NFLX',
+        timeframe: '1d',
+        entryDate: '2024-03-05',
+        exitDate: '2024-03-12',
+        entryPrice: 598.75,
+        exitPrice: 575.40,
+        profit: 3.90,
+        success: true,
+        holdingPeriod: 7,
+        confidenceScore: 81
+      },
+      {
+        id: '5',
+        patternType: 'Bull Flag',
+        symbol: 'NVDA',
+        timeframe: '4h',
+        entryDate: '2024-03-20',
+        exitDate: '2024-03-22',
+        entryPrice: 925.15,
+        exitPrice: 942.89,
+        profit: 1.92,
+        success: true,
+        holdingPeriod: 2,
+        confidenceScore: 89
+      }
+    ];
+  } catch (error) {
+    console.error('Error fetching backtest results:', error);
+    return [];
+  }
+};
+
+/**
+ * Fetch performance metrics
+ * @returns Promise with performance metrics
+ */
+export const fetchPerformanceMetrics = async () => {
+  try {
+    // In a real implementation, this would fetch from Supabase
+    // For now, return realistic mock data
+    return {
+      overallWinRate: 76.8,
+      profitFactor: 3.12,
+      averageHoldingPeriod: 5.4,
+      patternPerformance: {
+        'Bull Flag': {
+          winRate: 82.5,
+          profitFactor: 3.45,
+          averageProfit: 5.8,
+          count: 124
+        },
+        'Bear Flag': {
+          winRate: 74.3,
+          profitFactor: 2.87,
+          averageProfit: 4.9,
+          count: 98
+        },
+        'Ascending Triangle': {
+          winRate: 79.1,
+          profitFactor: 3.21,
+          averageProfit: 5.3,
+          count: 86
+        },
+        'Descending Triangle': {
+          winRate: 71.2,
+          profitFactor: 2.65,
+          averageProfit: 4.7,
+          count: 73
+        }
+      },
+      timeframePerformance: {
+        '15m': {
+          winRate: 68.7,
+          profitFactor: 2.34,
+          averageProfit: 3.2,
+          count: 215
+        },
+        '1h': {
+          winRate: 72.5,
+          profitFactor: 2.78,
+          averageProfit: 4.1,
+          count: 187
+        },
+        '4h': {
+          winRate: 74.3,
+          profitFactor: 2.95,
+          averageProfit: 4.8,
+          count: 142
+        },
+        '1d': {
+          winRate: 76.8,
+          profitFactor: 3.12,
+          averageProfit: 5.4,
+          count: 98
+        }
+      }
+    };
+  } catch (error) {
+    console.error('Error fetching performance metrics:', error);
+    return {
+      overallWinRate: 0,
+      profitFactor: 0,
+      averageHoldingPeriod: 0,
+      patternPerformance: {},
+      timeframePerformance: {}
+    };
+  }
+};
