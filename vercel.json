@@ -1,12 +1,5 @@
 {
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
-  ],
-  "authentication": {
-    "providers": ["vercel"],
-    "redirects": {
-      "login": "/login",
-      "callback": "/api/auth/callback"
-    }
-  }
+  ]
 } 

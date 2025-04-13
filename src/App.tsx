@@ -1,8 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProviderWrapper as AuthProvider } from '@/services/auth/AuthProviderWrapper';
 import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import VercelProtectedRoute from '@/components/auth/VercelProtectedRoute';
 import Login from '@/components/auth/Login';
 import ScannerDashboard from '@/components/scanner/ScannerDashboard';
 import GoldenScannerDashboard from '@/components/scanner/GoldenScannerDashboard';
@@ -56,27 +55,6 @@ const theme = createTheme({
 });
 
 function App() {
-  const [useVercelAuth, setUseVercelAuth] = useState(false);
-  
-  // Check if Vercel authentication is available
-  useEffect(() => {
-    const checkVercelAuth = async () => {
-      try {
-        const response = await fetch('/.well-known/vercel-user-meta');
-        if (response.status === 200) {
-          setUseVercelAuth(true);
-        }
-      } catch (error) {
-        console.log('Vercel auth not available, using fallback auth');
-      }
-    };
-    
-    checkVercelAuth();
-  }, []);
-  
-  // Choose the appropriate protected route component
-  const SecureRoute = useVercelAuth ? VercelProtectedRoute : ProtectedRoute;
-
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -87,33 +65,33 @@ function App() {
               <Route path="/login" element={<Login />} />
               
               <Route path="/scanner" element={
-                <SecureRoute>
+                <ProtectedRoute>
                   <ScannerDashboard />
-                </SecureRoute>
+                </ProtectedRoute>
               } />
               
               <Route path="/golden-scanner" element={
-                <SecureRoute>
+                <ProtectedRoute>
                   <GoldenScannerDashboard />
-                </SecureRoute>
+                </ProtectedRoute>
               } />
               
               <Route path="/backtest" element={
-                <SecureRoute>
+                <ProtectedRoute>
                   <BacktestDashboard />
-                </SecureRoute>
+                </ProtectedRoute>
               } />
               
               <Route path="/yahoo-backtest" element={
-                <SecureRoute>
+                <ProtectedRoute>
                   <YahooBacktestDashboard />
-                </SecureRoute>
+                </ProtectedRoute>
               } />
               
               <Route path="/notifications" element={
-                <SecureRoute>
+                <ProtectedRoute>
                   <NotificationCenter />
-                </SecureRoute>
+                </ProtectedRoute>
               } />
               
               {/* Redirect root to golden scanner */}

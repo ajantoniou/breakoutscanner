@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/services/auth/authService';
-import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress, Divider } from '@mui/material';
+import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress } from '@mui/material';
 import { DEMO_EMAIL, DEMO_PASSWORD, authService } from '@/services/auth/authService';
 import { useNavigate } from 'react-router-dom';
 
@@ -12,10 +12,9 @@ const Login = () => {
   const [creatingDemo, setCreatingDemo] = useState(false);
   const [success, setSuccess] = useState(false);
   
-  const { signIn } = useAuth();
   const navigate = useNavigate();
   
-  // Effect to create demo user on component mount
+  // Effect to create demo user on component mount and prefill credentials
   useEffect(() => {
     const createDemoUserOnMount = async () => {
       try {
@@ -62,44 +61,6 @@ const Login = () => {
     }
   };
   
-  const handleUseDemoCredentials = () => {
-    setEmail(DEMO_EMAIL);
-    setPassword(DEMO_PASSWORD);
-  };
-  
-  const handleCreateDemoAccount = async () => {
-    setCreatingDemo(true);
-    setError('');
-    
-    try {
-      const { error, user } = await authService.createDemoUser();
-      
-      if (error) {
-        throw new Error(error.message || 'Failed to create demo account');
-      }
-      
-      if (user) {
-        setEmail(DEMO_EMAIL);
-        setPassword(DEMO_PASSWORD);
-        alert('Demo account created successfully! You can now log in with the demo credentials.');
-      } else {
-        alert('Demo account already exists. You can use the demo credentials to log in.');
-        setEmail(DEMO_EMAIL);
-        setPassword(DEMO_PASSWORD);
-      }
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setCreatingDemo(false);
-    }
-  };
-  
-  const handleVercelLogin = () => {
-    setLoading(true);
-    // Redirect to Vercel OAuth
-    window.location.href = `${window.location.origin}/.vercel/login`;
-  };
-  
   return (
     <Box 
       sx={{ 
@@ -138,27 +99,6 @@ const Login = () => {
             Login successful!
           </Alert>
         )}
-
-        <Button
-          variant="contained"
-          color="primary"
-          fullWidth
-          size="large" 
-          onClick={handleVercelLogin}
-          disabled={loading}
-          sx={{
-            backgroundColor: '#000',
-            color: '#fff',
-            '&:hover': {
-              backgroundColor: '#333',
-            },
-            mb: 3
-          }}
-        >
-          {loading ? <CircularProgress size={24} /> : 'Login with Vercel'}
-        </Button>
-
-        <Divider sx={{ my: 2 }}>OR</Divider>
         
         <form onSubmit={handleSubmit}>
           <TextField
@@ -205,28 +145,6 @@ const Login = () => {
             <Typography variant="body2" sx={{ fontWeight: 'bold' }}>
               Password: {DEMO_PASSWORD}
             </Typography>
-            
-            <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
-              <Button
-                variant="outlined"
-                color="primary"
-                size="small"
-                onClick={handleUseDemoCredentials}
-                disabled={loading}
-              >
-                Use Demo Credentials
-              </Button>
-              
-              <Button
-                variant="outlined"
-                color="secondary"
-                size="small"
-                onClick={handleCreateDemoAccount}
-                disabled={loading || creatingDemo}
-              >
-                {creatingDemo ? <CircularProgress size={20} /> : 'Create Demo Account'}
-              </Button>
-            </Box>
           </Box>
         </form>
       </Paper>
