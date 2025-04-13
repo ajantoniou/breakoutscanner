@@ -1,8 +1,9 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProviderWrapper as AuthProvider } from '@/services/auth/AuthProviderWrapper';
-import ProtectedRoute from '@/components/auth/ProtectedRoute';
-import Login from '@/components/auth/Login';
+// We no longer need ProtectedRoute or Login component for this simplified access
+// import ProtectedRoute from '@/components/auth/ProtectedRoute';
+// import Login from '@/components/auth/Login'; 
 import ScannerDashboard from '@/components/scanner/ScannerDashboard';
 import GoldenScannerDashboard from '@/components/scanner/GoldenScannerDashboard';
 import BacktestDashboard from '@/components/backtest/BacktestDashboard';
@@ -58,46 +59,22 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthProvider>
+      <AuthProvider> {/* Keep AuthProvider for potential context needs, though login isn't enforced */}
         <Router>
           <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
             <Routes>
-              <Route path="/login" element={<Login />} />
+              {/* Login route now redirects immediately */}
+              <Route path="/login" element={<Navigate to="/golden-scanner" replace />} />
               
-              <Route path="/scanner" element={
-                <ProtectedRoute>
-                  <ScannerDashboard />
-                </ProtectedRoute>
-              } />
+              {/* Remove ProtectedRoute wrappers */}
+              <Route path="/scanner" element={<ScannerDashboard />} />
+              <Route path="/golden-scanner" element={<GoldenScannerDashboard />} />
+              <Route path="/backtest" element={<BacktestDashboard />} />
+              <Route path="/yahoo-backtest" element={<YahooBacktestDashboard />} />
+              <Route path="/notifications" element={<NotificationCenter />} />
               
-              <Route path="/golden-scanner" element={
-                <ProtectedRoute>
-                  <GoldenScannerDashboard />
-                </ProtectedRoute>
-              } />
-              
-              <Route path="/backtest" element={
-                <ProtectedRoute>
-                  <BacktestDashboard />
-                </ProtectedRoute>
-              } />
-              
-              <Route path="/yahoo-backtest" element={
-                <ProtectedRoute>
-                  <YahooBacktestDashboard />
-                </ProtectedRoute>
-              } />
-              
-              <Route path="/notifications" element={
-                <ProtectedRoute>
-                  <NotificationCenter />
-                </ProtectedRoute>
-              } />
-              
-              {/* Redirect root to golden scanner */}
+              {/* Keep redirects for root and catch-all */}
               <Route path="/" element={<Navigate to="/golden-scanner" replace />} />
-              
-              {/* Catch all other routes and redirect to golden scanner */}
               <Route path="*" element={<Navigate to="/golden-scanner" replace />} />
             </Routes>
           </Box>
