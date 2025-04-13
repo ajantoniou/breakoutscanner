@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/services/auth/authService';
-import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress } from '@mui/material';
+import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress, Divider } from '@mui/material';
 import { DEMO_EMAIL, DEMO_PASSWORD, authService } from '@/services/auth/authService';
 import { useNavigate } from 'react-router-dom';
 
@@ -94,6 +94,12 @@ const Login = () => {
     }
   };
   
+  const handleVercelLogin = () => {
+    setLoading(true);
+    // Redirect to Vercel OAuth
+    window.location.href = `${window.location.origin}/.vercel/login`;
+  };
+  
   return (
     <Box 
       sx={{ 
@@ -132,6 +138,27 @@ const Login = () => {
             Login successful!
           </Alert>
         )}
+
+        <Button
+          variant="contained"
+          color="primary"
+          fullWidth
+          size="large" 
+          onClick={handleVercelLogin}
+          disabled={loading}
+          sx={{
+            backgroundColor: '#000',
+            color: '#fff',
+            '&:hover': {
+              backgroundColor: '#333',
+            },
+            mb: 3
+          }}
+        >
+          {loading ? <CircularProgress size={24} /> : 'Login with Vercel'}
+        </Button>
+
+        <Divider sx={{ my: 2 }}>OR</Divider>
         
         <form onSubmit={handleSubmit}>
           <TextField
