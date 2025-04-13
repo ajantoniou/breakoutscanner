@@ -57,6 +57,20 @@ const theme = createTheme({
 });
 
 function App() {
+  // Dummy data/state for demonstration. Replace with actual data fetching.
+  const dummyResults: (PatternData | BreakoutData)[] = [];
+  const dummyBacktestStats = {
+    avgCandlesToBreakout: {},
+    winRateByTimeframe: {},
+    profitFactorByTimeframe: {},
+  };
+  const isLoading = false;
+  const activeScanner = null;
+  const handleRunScanner = (mode: 'day' | 'swing' | 'golden', timeframe: string) => {
+    console.log(`Triggering ${mode} scanner for timeframe ${timeframe}...`);
+    // Implement actual scanner triggering logic here
+  };
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
@@ -68,9 +82,35 @@ function App() {
               {/* Login route now redirects immediately */}
               <Route path="/login" element={<Navigate to="/golden-scanner" replace />} />
               
-              {/* Remove ProtectedRoute wrappers */}
-              <Route path="/scanner" element={<ScannerDashboard />} />
-              <Route path="/golden-scanner" element={<GoldenScannerDashboard />} />
+              {/* Pass dummy props to ScannerDashboard */}
+              <Route 
+                path="/scanner" 
+                element={(
+                  <ScannerDashboard 
+                    dayTradingResults={dummyResults} 
+                    swingTradingResults={dummyResults} 
+                    goldenScannerResults={dummyResults} // Pass dummy golden results too
+                    backtestStats={dummyBacktestStats}
+                    isLoading={isLoading}
+                    activeScanner={activeScanner}
+                    onRunScanner={handleRunScanner}
+                  />
+                )}
+              />
+              <Route 
+                path="/golden-scanner" 
+                element={(
+                  <ScannerDashboard 
+                    dayTradingResults={dummyResults} 
+                    swingTradingResults={dummyResults} 
+                    goldenScannerResults={dummyResults} // Pass dummy golden results here
+                    backtestStats={dummyBacktestStats}
+                    isLoading={isLoading}
+                    activeScanner={activeScanner}
+                    onRunScanner={handleRunScanner}
+                  />
+                )}
+              />
               <Route path="/backtest" element={<BacktestDashboard />} />
               <Route path="/yahoo-backtest" element={<YahooBacktestDashboard />} />
               <Route path="/notifications" element={<NotificationCenter />} />
