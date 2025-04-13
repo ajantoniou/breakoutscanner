@@ -313,13 +313,24 @@ export const authService = new AuthService();
 
 // Create demo user on initial load (in production)
 if (import.meta.env.PROD) {
-  authService.createDemoUser()
-    .then(({ error }) => {
-      if (!error) {
-        console.log('Demo user is ready to use');
-      }
-    })
-    .catch(err => {
-      console.error('Failed to ensure demo user exists:', err);
-    });
+  console.log('Production environment detected, creating demo user...');
+  // Use setTimeout to ensure this runs after everything else has loaded
+  setTimeout(() => {
+    authService.createDemoUser()
+      .then(({ error, user }) => {
+        if (!error) {
+          console.log('Demo user is ready to use');
+          if (user) {
+            console.log('New demo user created');
+          } else {
+            console.log('Using existing demo user');
+          }
+        } else {
+          console.error('Failed to ensure demo user exists:', error);
+        }
+      })
+      .catch(err => {
+        console.error('Error in demo user creation:', err);
+      });
+  }, 1000);
 }

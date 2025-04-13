@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/services/auth/authService';
 import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress } from '@mui/material';
 import { DEMO_EMAIL, DEMO_PASSWORD, authService } from '@/services/auth/authService';
+import { useNavigate } from 'react-router-dom';
 
 const Login = () => {
   const [email, setEmail] = useState('');
@@ -12,6 +13,7 @@ const Login = () => {
   const [success, setSuccess] = useState(false);
   
   const { signIn } = useAuth();
+  const navigate = useNavigate();
   
   // Effect to create demo user on component mount
   useEffect(() => {
@@ -19,6 +21,10 @@ const Login = () => {
       try {
         console.log('Attempting to create demo user on mount...');
         await authService.createDemoUser();
+        
+        // Prefill demo credentials for easier login
+        setEmail(DEMO_EMAIL);
+        setPassword(DEMO_PASSWORD);
       } catch (err) {
         console.error('Error ensuring demo user exists:', err);
       }
@@ -33,14 +39,23 @@ const Login = () => {
     setLoading(true);
     
     try {
+      console.log(`Attempting to sign in with email: ${email}`);
       const { error: signInError } = await authService.signIn(email, password);
       
       if (signInError) {
+        console.error("Login error:", signInError);
         throw new Error(signInError.message || 'Failed to sign in');
       }
       
       setSuccess(true);
+      
+      // Navigate to the golden scanner page after successful login
+      setTimeout(() => {
+        navigate('/golden-scanner');
+      }, 1000);
+      
     } catch (err) {
+      console.error("Login error:", err);
       setError(err.message);
     } finally {
       setLoading(false);
