@@ -4,6 +4,7 @@ import { AuthProviderWrapper as AuthProvider } from '@/services/auth/AuthProvide
 // We no longer need ProtectedRoute or Login component for this simplified access
 // import ProtectedRoute from '@/components/auth/ProtectedRoute';
 // import Login from '@/components/auth/Login'; 
+import Navbar from '@/components/layout/Navbar';
 import ScannerDashboard from '@/components/scanner/ScannerDashboard';
 import GoldenScannerDashboard from '@/components/scanner/GoldenScannerDashboard';
 import BacktestDashboard from '@/components/backtest/BacktestDashboard';
@@ -61,7 +62,8 @@ function App() {
       <CssBaseline />
       <AuthProvider> {/* Keep AuthProvider for potential context needs, though login isn't enforced */}
         <Router>
-          <Box sx={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+          <Navbar />
+          <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, padding: 2 }}>
             <Routes>
               {/* Login route now redirects immediately */}
               <Route path="/login" element={<Navigate to="/golden-scanner" replace />} />
