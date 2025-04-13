@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '@/services/auth/authService';
 import { Box, Button, TextField, Typography, Paper, Alert, CircularProgress } from '@mui/material';
 import { DEMO_EMAIL, DEMO_PASSWORD, authService } from '@/services/auth/authService';
 
@@ -33,7 +33,7 @@ const Login = () => {
     setLoading(true);
     
     try {
-      const { error: signInError } = await signIn(email, password);
+      const { error: signInError } = await authService.signIn(email, password);
       
       if (signInError) {
         throw new Error(signInError.message || 'Failed to sign in');
