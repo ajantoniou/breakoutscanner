@@ -48,21 +48,26 @@ export function AuthProvider(props?: { children: ReactNode }) {
   useEffect(() => {
     // Get session from Supabase
     const getSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Error getting session:', error);
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+        }
+        
+        setSession(data.session);
+        setUser(data.session?.user ? mapUser(data.session.user) : null);
+        setLoading(false);
+      } catch (err) {
+        console.error('Error in getSession:', err);
+        setLoading(false);
       }
-      
-      setSession(session);
-      setUser(session?.user ? mapUser(session.user) : null);
-      setLoading(false);
     };
 
     getSession();
 
     // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data } = supabase.auth.onAuthStateChange(
       async (_event, session) => {
         setSession(session);
         setUser(session?.user ? mapUser(session.user) : null);
@@ -72,7 +77,9 @@ export function AuthProvider(props?: { children: ReactNode }) {
 
     // Cleanup subscription
     return () => {
-      subscription.unsubscribe();
+      if (data.subscription) {
+        data.subscription.unsubscribe();
+      }
     };
   }, []);
 
@@ -215,23 +222,33 @@ export const useAuth = () => {
 class AuthService {
   // Check if user is authenticated
   async isAuthenticated(): Promise<boolean> {
-    const { data: { session } } = await supabase.auth.getSession();
-    return !!session;
+    try {
+      const { data } = await supabase.auth.getSession();
+      return !!data.session;
+    } catch (error) {
+      console.error('Error checking authentication:', error);
+      return false;
+    }
   }
 
   // Get current user
   async getCurrentUser(): Promise<User | null> {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return null;
-    
-    return {
-      id: session.user.id,
-      email: session.user.email || '',
-      username: session.user.user_metadata?.username || '',
-      created_at: session.user.created_at,
-      last_sign_in: session.user.last_sign_in_at,
-      role: session.user.user_metadata?.role || 'user'
-    };
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (!data.session?.user) return null;
+      
+      return {
+        id: data.session.user.id,
+        email: data.session.user.email || '',
+        username: data.session.user.user_metadata?.username || '',
+        created_at: data.session.user.created_at,
+        last_sign_in: data.session.user.last_sign_in_at,
+        role: data.session.user.user_metadata?.role || 'user'
+      };
+    } catch (error) {
+      console.error('Error getting current user:', error);
+      return null;
+    }
   }
 
   // Sign in with email and password
