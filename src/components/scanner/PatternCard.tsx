@@ -8,13 +8,13 @@ import {
   Button,
   Divider,
   Chip,
-  Grid
+  Stack
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import { formatDistance } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
 interface PatternCardProps {
   pattern: {
@@ -77,11 +77,14 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
   const direction = isBullish ? 'bullish' : 'bearish';
   
   // Format the time since creation
-  const timeAgo = formatDistance(new Date(pattern.created_at), new Date(), { addSuffix: true });
+  const timeAgo = formatDistanceToNow(new Date(pattern.created_at), { addSuffix: true });
   
-  // Calculate expected breakout time based on average candles to breakout
+  // Format created date for display
+  const formattedCreatedDate = format(new Date(pattern.created_at), 'MMM d, yyyy h:mm a');
+  
+  // Check if the expected breakout date is in the past
   const getExpectedBreakoutTime = () => {
-    if (!avgCandlesToBreakout) return 'N/A';
+    if (!avgCandlesToBreakout) return { text: 'N/A', isPast: false };
     
     const createdAt = new Date(pattern.created_at);
     let timeframeInMinutes = 0;
@@ -119,15 +122,39 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     // Calculate expected breakout time
     const expectedBreakoutTime = new Date(createdAt.getTime() + (avgCandlesToBreakout * timeframeInMinutes * 60 * 1000));
     
+    // Check if the expected breakout time is in the past
+    const isPast = expectedBreakoutTime < new Date();
+    
     // Format date for display
-    return expectedBreakoutTime.toLocaleString();
+    const formattedDate = format(expectedBreakoutTime, 'MMM d, yyyy h:mm a');
+    
+    return { 
+      text: formattedDate,
+      isPast
+    };
   };
 
+  const breakoutInfo = getExpectedBreakoutTime();
+
   return (
-    <Card elevation={3} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <CardContent sx={{ flexGrow: 1 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-          <Typography variant="h6" component="div">
+    <Card 
+      elevation={3} 
+      sx={{ 
+        height: '100%', 
+        display: 'flex', 
+        flexDirection: 'column',
+        borderTop: '4px solid',
+        borderColor: isBullish ? 'success.main' : 'error.main',
+        transition: 'transform 0.2s',
+        '&:hover': {
+          transform: 'translateY(-4px)',
+          boxShadow: 6
+        }
+      }}
+    >
+      <CardContent sx={{ flexGrow: 1, padding: 2 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+          <Typography variant="h6" component="div" fontWeight="bold">
             {pattern.symbol}
           </Typography>
           <Chip 
@@ -135,6 +162,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
             label={isBullish ? 'Bullish' : 'Bearish'}
             color={isBullish ? 'success' : 'error'}
             size="small"
+            sx={{ fontWeight: 'bold' }}
           />
         </Box>
         
@@ -144,78 +172,93 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         
         <Divider sx={{ my: 1.5 }} />
         
-        <Grid container spacing={1} sx={{ mb: 1.5 }}>
-          <Grid item sx={{ width: '33%' }}>
-            <Typography variant="caption" color="text.secondary">
+        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+          <Box sx={{ width: '33%' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Detected
             </Typography>
-            <Typography variant="body2" fontWeight="bold">
+            <Typography variant="body2">
               {timeAgo}
             </Typography>
-          </Grid>
-          <Grid item sx={{ width: '33%' }}>
-            <Typography variant="caption" color="text.secondary">
+          </Box>
+          <Box sx={{ width: '33%' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Confidence
             </Typography>
-            <Typography variant="body2" fontWeight="bold">
+            <Typography variant="body2" sx={{ color: getConfidenceColor(pattern.confidence_score) }}>
               {pattern.confidence_score}% ({getConfidenceText(pattern.confidence_score)})
             </Typography>
-          </Grid>
-          <Grid item sx={{ width: '33%' }}>
-            <Typography variant="caption" color="text.secondary">
+          </Box>
+          <Box sx={{ width: '33%' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Status
             </Typography>
-            <Typography variant="body2" fontWeight="bold">
+            <Typography variant="body2" sx={{ 
+              color: pattern.status === 'Active' ? 'success.main' : 
+                     pattern.status === 'Pending' ? 'info.main' : 
+                     pattern.status === 'Completed' ? 'text.primary' : 'error.main'
+            }}>
               {pattern.status}
             </Typography>
-          </Grid>
-        </Grid>
+          </Box>
+        </Stack>
         
-        <Grid container spacing={1} sx={{ mb: 1.5 }}>
-          <Grid item sx={{ width: '50%' }}>
-            <Typography variant="caption" color="text.secondary">
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, p: 1, bgcolor: 'background.paper', borderRadius: 1 }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Entry
             </Typography>
             <Typography variant="body2" fontWeight="bold">
               ${formatPrice(pattern.entry_price)}
             </Typography>
-          </Grid>
-          <Grid item sx={{ width: '50%' }}>
-            <Typography variant="caption" color="text.secondary">
+          </Box>
+          <Box textAlign="center">
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+              Risk/Reward
+            </Typography>
+            <Typography variant="body2" fontWeight="bold">
+              {formatRiskReward(pattern.risk_reward_ratio)}
+            </Typography>
+          </Box>
+          <Box textAlign="right">
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Target
             </Typography>
             <Typography variant="body2" fontWeight="bold" color="success.main">
-              ${formatPrice(pattern.target_price)} (+{potentialProfit.toFixed(1)}%)
+              ${formatPrice(pattern.target_price)}
             </Typography>
-          </Grid>
-        </Grid>
+          </Box>
+        </Box>
         
-        <Grid container spacing={1} sx={{ mb: 1.5 }}>
-          <Grid item sx={{ width: '50%' }}>
-            <Typography variant="caption" color="text.secondary">
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Stop Loss
             </Typography>
-            <Typography variant="body2" fontWeight="bold" color="error.main">
+            <Typography variant="body2" color="error.main">
               ${pattern.stop_loss ? formatPrice(pattern.stop_loss) : 'N/A'}
             </Typography>
-          </Grid>
-          <Grid item sx={{ width: '50%' }}>
-            <Typography variant="caption" color="text.secondary">Channel Type</Typography>
-            <Typography variant="body2" fontWeight="bold">
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+              Profit %
+            </Typography>
+            <Typography variant="body2" color="success.main">
+              +{potentialProfit.toFixed(1)}%
+            </Typography>
+          </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+              Channel
+            </Typography>
+            <Typography variant="body2">
               {pattern.channel_type || 'N/A'}
             </Typography>
-          </Grid>
-        </Grid>
-        
-        <Box sx={{ mb: 1.5 }}>
-          <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Risk/Reward</span>
-            <span>{formatRiskReward(pattern.risk_reward_ratio)}</span>
-          </Typography>
+          </Box>
         </Box>
         
         {pattern.volume_confirmation && (
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
             <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
             <Typography variant="body2" color="success.main">
               Volume Confirmation
@@ -224,7 +267,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         )}
         
         {pattern.trendline_break && (
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
             <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
             <Typography variant="body2" color="success.main">
               Trendline Break
@@ -233,25 +276,49 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         )}
         
         {avgCandlesToBreakout && (
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <AccessTimeIcon color="info" fontSize="small" sx={{ mr: 0.5 }} />
-            <Typography variant="body2" color="info.main">
-              Expected Breakout: {getExpectedBreakoutTime()}
-            </Typography>
+          <Box sx={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            p: 1, 
+            mb: 1, 
+            bgcolor: breakoutInfo.isPast ? 'error.lightest' : 'info.lightest', 
+            borderRadius: 1,
+            border: 1,
+            borderColor: breakoutInfo.isPast ? 'error.light' : 'info.light'
+          }}>
+            <AccessTimeIcon color={breakoutInfo.isPast ? "error" : "info"} fontSize="small" sx={{ mr: 0.5 }} />
+            <Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+                Expected Breakout
+              </Typography>
+              <Typography variant="body2" color={breakoutInfo.isPast ? "error" : "info.main"}>
+                {breakoutInfo.text} {breakoutInfo.isPast && '(Past)'}
+              </Typography>
+            </Box>
           </Box>
         )}
         
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          Created: {new Date(pattern.created_at).toLocaleString()}
+          Created: {formattedCreatedDate}
         </Typography>
       </CardContent>
       
-      <CardActions>
-        <Button size="small" color="primary">
+      <CardActions sx={{ padding: '8px 16px 16px 16px', justifyContent: 'space-between' }}>
+        <Button 
+          size="small" 
+          color="primary" 
+          variant="contained" 
+          sx={{ flex: 1, mr: 1 }}
+        >
           View Chart
         </Button>
-        <Button size="small" color="secondary">
-          Backtest History
+        <Button 
+          size="small" 
+          color="secondary" 
+          variant="outlined"
+          sx={{ flex: 1 }}
+        >
+          Backtest
         </Button>
       </CardActions>
     </Card>
