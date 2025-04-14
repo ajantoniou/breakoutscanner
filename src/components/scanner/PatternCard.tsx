@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   Box, 
   Typography, 
@@ -8,13 +8,17 @@ import {
   Button,
   Divider,
   Chip,
-  Stack
+  Stack,
+  Tooltip
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import { format, formatDistanceToNow } from 'date-fns';
+import WarningIcon from '@mui/icons-material/Warning';
+import ArchiveIcon from '@mui/icons-material/Archive';
+import { format, differenceInHours, differenceInDays } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 
 interface PatternCardProps {
   pattern: {
@@ -35,9 +39,10 @@ interface PatternCardProps {
     risk_reward_ratio?: number;
   };
   avgCandlesToBreakout?: number;
+  onArchive?: (id: string) => void;
 }
 
-const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout }) => {
+const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout, onArchive }) => {
   // Format entry, target, and stop loss prices
   const formatPrice = (price: number) => {
     return price < 10 ? price.toFixed(3) : price.toFixed(2);
@@ -84,7 +89,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
   
   // Check if the expected breakout date is in the past
   const getExpectedBreakoutTime = () => {
-    if (!avgCandlesToBreakout) return { text: 'N/A', isPast: false };
+    if (!avgCandlesToBreakout) return { text: 'N/A', isPast: false, isStale: false, hoursPast: 0 };
     
     const createdAt = new Date(pattern.created_at);
     let timeframeInMinutes = 0;
@@ -125,16 +130,67 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     // Check if the expected breakout time is in the past
     const isPast = expectedBreakoutTime < new Date();
     
+    // Calculate hours past the expected breakout time
+    const hoursPast = isPast ? differenceInHours(new Date(), expectedBreakoutTime) : 0;
+    
+    // Check if the pattern is stale (more than 24 hours past expected breakout)
+    const isStale = hoursPast > 24;
+    
     // Format date for display
     const formattedDate = format(expectedBreakoutTime, 'MMM d, yyyy h:mm a');
     
     return { 
       text: formattedDate,
-      isPast
+      isPast,
+      isStale,
+      hoursPast,
+      breakoutTime: expectedBreakoutTime
     };
   };
 
-  const breakoutInfo = getExpectedBreakoutTime();
+  // Using useMemo to prevent unnecessary recalculations
+  const breakoutInfo = useMemo(() => getExpectedBreakoutTime(), [pattern.created_at, pattern.timeframe, avgCandlesToBreakout]);
+
+  // Generate status label and color based on pattern status and breakout timing
+  const getStatusInfo = () => {
+    // If the pattern has a completed or invalid status, use that
+    if (pattern.status === 'Completed' || pattern.status === 'Invalid') {
+      return {
+        label: pattern.status,
+        color: pattern.status === 'Completed' ? 'text.primary' : 'error.main'
+      };
+    }
+    
+    // Check if breakout date is in the past
+    if (breakoutInfo.isPast) {
+      // If pattern is stale (more than 24 hours past expected breakout)
+      if (breakoutInfo.isStale) {
+        return {
+          label: 'Expired',
+          color: 'error.main'
+        };
+      }
+      
+      // If pattern is past expected breakout but not stale yet
+      return {
+        label: 'Delayed',
+        color: 'warning.main'
+      };
+    }
+    
+    // If the pattern is active and breakout time is in the future
+    return {
+      label: pattern.status,
+      color: pattern.status === 'Active' ? 'success.main' : 
+             pattern.status === 'Pending' ? 'info.main' : 'text.primary'
+    };
+  };
+
+  const statusInfo = getStatusInfo();
+  
+  // Calculate days old
+  const daysOld = differenceInDays(new Date(), new Date(pattern.created_at));
+  const isOld = daysOld > 7; // Consider patterns older than 7 days as "old"
 
   return (
     <Card 
@@ -146,6 +202,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         borderTop: '4px solid',
         borderColor: isBullish ? 'success.main' : 'error.main',
         transition: 'transform 0.2s',
+        opacity: breakoutInfo.isStale || isOld ? 0.8 : 1,
         '&:hover': {
           transform: 'translateY(-4px)',
           boxShadow: 6
@@ -157,13 +214,20 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
           <Typography variant="h6" component="div" fontWeight="bold">
             {pattern.symbol}
           </Typography>
-          <Chip 
-            icon={isBullish ? <TrendingUpIcon /> : <TrendingDownIcon />}
-            label={isBullish ? 'Bullish' : 'Bearish'}
-            color={isBullish ? 'success' : 'error'}
-            size="small"
-            sx={{ fontWeight: 'bold' }}
-          />
+          <Box display="flex" alignItems="center">
+            <Chip 
+              icon={isBullish ? <TrendingUpIcon /> : <TrendingDownIcon />}
+              label={isBullish ? 'Bullish' : 'Bearish'}
+              color={isBullish ? 'success' : 'error'}
+              size="small"
+              sx={{ fontWeight: 'bold', mr: breakoutInfo.isStale || isOld ? 1 : 0 }}
+            />
+            {(breakoutInfo.isStale || isOld) && (
+              <Tooltip title={isOld ? "Pattern is over 7 days old" : "Past expected breakout time"}>
+                <WarningIcon color="warning" fontSize="small" />
+              </Tooltip>
+            )}
+          </Box>
         </Box>
         
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
@@ -193,12 +257,8 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Status
             </Typography>
-            <Typography variant="body2" sx={{ 
-              color: pattern.status === 'Active' ? 'success.main' : 
-                     pattern.status === 'Pending' ? 'info.main' : 
-                     pattern.status === 'Completed' ? 'text.primary' : 'error.main'
-            }}>
-              {pattern.status}
+            <Typography variant="body2" sx={{ color: statusInfo.color }}>
+              {statusInfo.label}
             </Typography>
           </Box>
         </Stack>
@@ -281,18 +341,29 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
             alignItems: 'center', 
             p: 1, 
             mb: 1, 
-            bgcolor: breakoutInfo.isPast ? 'error.lightest' : 'info.lightest', 
+            bgcolor: breakoutInfo.isStale ? 'error.lightest' : 
+                     breakoutInfo.isPast ? 'warning.lightest' : 'info.lightest', 
             borderRadius: 1,
             border: 1,
-            borderColor: breakoutInfo.isPast ? 'error.light' : 'info.light'
+            borderColor: breakoutInfo.isStale ? 'error.light' : 
+                         breakoutInfo.isPast ? 'warning.light' : 'info.light'
           }}>
-            <AccessTimeIcon color={breakoutInfo.isPast ? "error" : "info"} fontSize="small" sx={{ mr: 0.5 }} />
+            <AccessTimeIcon 
+              color={breakoutInfo.isStale ? "error" : breakoutInfo.isPast ? "warning" : "info"} 
+              fontSize="small" 
+              sx={{ mr: 0.5 }} 
+            />
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
                 Expected Breakout
               </Typography>
-              <Typography variant="body2" color={breakoutInfo.isPast ? "error" : "info.main"}>
-                {breakoutInfo.text} {breakoutInfo.isPast && '(Past)'}
+              <Typography 
+                variant="body2" 
+                color={breakoutInfo.isStale ? "error" : breakoutInfo.isPast ? "warning.main" : "info.main"}
+              >
+                {breakoutInfo.text} 
+                {breakoutInfo.isStale && ' (Expired)'}
+                {breakoutInfo.isPast && !breakoutInfo.isStale && ' (Due)'}
               </Typography>
             </Box>
           </Box>
@@ -312,14 +383,27 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         >
           View Chart
         </Button>
-        <Button 
-          size="small" 
-          color="secondary" 
-          variant="outlined"
-          sx={{ flex: 1 }}
-        >
-          Backtest
-        </Button>
+        {breakoutInfo.isStale || isOld ? (
+          <Button 
+            size="small" 
+            color="warning" 
+            variant="outlined"
+            sx={{ flex: 1 }}
+            onClick={() => onArchive && onArchive(pattern.id)}
+            startIcon={<ArchiveIcon />}
+          >
+            Archive
+          </Button>
+        ) : (
+          <Button 
+            size="small" 
+            color="secondary" 
+            variant="outlined"
+            sx={{ flex: 1 }}
+          >
+            Backtest
+          </Button>
+        )}
       </CardActions>
     </Card>
   );
