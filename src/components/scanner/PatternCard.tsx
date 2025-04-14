@@ -14,7 +14,7 @@ import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import { formatDistanceToNowStrict } from 'date-fns';
+import { formatDistance } from 'date-fns';
 
 interface PatternCardProps {
   pattern: {
@@ -77,7 +77,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
   const direction = isBullish ? 'bullish' : 'bearish';
   
   // Format the time since creation
-  const timeAgo = formatDistanceToNowStrict(new Date(pattern.created_at), { addSuffix: true });
+  const timeAgo = formatDistance(new Date(pattern.created_at), new Date(), { addSuffix: true });
   
   // Calculate expected breakout time based on average candles to breakout
   const getExpectedBreakoutTime = () => {
@@ -145,7 +145,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         <Divider sx={{ my: 1.5 }} />
         
         <Grid container spacing={1} sx={{ mb: 1.5 }}>
-          <Grid item xs={4}>
+          <Grid item sx={{ width: '33%' }}>
             <Typography variant="caption" color="text.secondary">
               Detected
             </Typography>
@@ -153,7 +153,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
               {timeAgo}
             </Typography>
           </Grid>
-          <Grid item xs={4}>
+          <Grid item sx={{ width: '33%' }}>
             <Typography variant="caption" color="text.secondary">
               Confidence
             </Typography>
@@ -161,7 +161,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
               {pattern.confidence_score}% ({getConfidenceText(pattern.confidence_score)})
             </Typography>
           </Grid>
-          <Grid item xs={4}>
+          <Grid item sx={{ width: '33%' }}>
             <Typography variant="caption" color="text.secondary">
               Status
             </Typography>
@@ -172,7 +172,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         </Grid>
         
         <Grid container spacing={1} sx={{ mb: 1.5 }}>
-          <Grid item xs={6}>
+          <Grid item sx={{ width: '50%' }}>
             <Typography variant="caption" color="text.secondary">
               Entry
             </Typography>
@@ -180,7 +180,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
               ${formatPrice(pattern.entry_price)}
             </Typography>
           </Grid>
-          <Grid item xs={6}>
+          <Grid item sx={{ width: '50%' }}>
             <Typography variant="caption" color="text.secondary">
               Target
             </Typography>
@@ -191,7 +191,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         </Grid>
         
         <Grid container spacing={1} sx={{ mb: 1.5 }}>
-          <Grid item xs={6}>
+          <Grid item sx={{ width: '50%' }}>
             <Typography variant="caption" color="text.secondary">
               Stop Loss
             </Typography>
@@ -199,7 +199,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
               ${pattern.stop_loss ? formatPrice(pattern.stop_loss) : 'N/A'}
             </Typography>
           </Grid>
-          <Grid item xs={6}>
+          <Grid item sx={{ width: '50%' }}>
             <Typography variant="caption" color="text.secondary">Channel Type</Typography>
             <Typography variant="body2" fontWeight="bold">
               {pattern.channel_type || 'N/A'}
