@@ -1,84 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Box, Typography, Paper, Grid, Card, CardContent, Chip, Button, CircularProgress, Alert } from '@mui/material';
+import { Box, Typography, CircularProgress, Alert, Button, Chip, Grid } from '@mui/material';
 import { useAuth } from '@/contexts/AuthContext';
 import MarketHoursService from '@/services/api/marketData/marketHoursService';
-
-// Mock data for high confidence predictions
-const HIGH_CONFIDENCE_PREDICTIONS = [
-  {
-    symbol: 'AAPL',
-    currentPrice: 233.50,
-    entryPrice: 235.80,
-    targetPrice: 247.00,
-    stopLoss: 228.00,
-    potentialProfit: 4.8,
-    timeframe: '1d',
-    pattern: 'Ascending Triangle',
-    direction: 'Bullish',
-    confidence: 85,
-    expectedBreakout: '3-4 trading days'
-  },
-  {
-    symbol: 'MSFT',
-    currentPrice: 442.30,
-    entryPrice: 445.00,
-    targetPrice: 467.00,
-    stopLoss: 435.00,
-    potentialProfit: 4.9,
-    timeframe: '4h',
-    pattern: 'Bull Flag',
-    direction: 'Bullish',
-    confidence: 82,
-    expectedBreakout: '2-3 trading days'
-  },
-  {
-    symbol: 'NVDA',
-    currentPrice: 110.00,
-    entryPrice: 111.50,
-    targetPrice: 118.00,
-    stopLoss: 106.00,
-    potentialProfit: 5.8,
-    timeframe: '1d',
-    pattern: 'Bull Flag',
-    direction: 'Bullish',
-    confidence: 90,
-    expectedBreakout: '2-3 trading days'
-  },
-  {
-    symbol: 'AMZN',
-    currentPrice: 182.75,
-    entryPrice: 184.50,
-    targetPrice: 195.00,
-    stopLoss: 178.00,
-    potentialProfit: 5.7,
-    timeframe: '1d',
-    pattern: 'Cup and Handle',
-    direction: 'Bullish',
-    confidence: 87,
-    expectedBreakout: '4-5 trading days'
-  },
-  {
-    symbol: 'TSLA',
-    currentPrice: 172.30,
-    entryPrice: 174.00,
-    targetPrice: 185.00,
-    stopLoss: 168.00,
-    potentialProfit: 6.3,
-    timeframe: '4h',
-    pattern: 'Ascending Triangle',
-    direction: 'Bullish',
-    confidence: 83,
-    expectedBreakout: '2-3 trading days'
-  }
-];
+import { supabase } from '@/services/supabase/patternService';
+import PatternCard from './PatternCard';
 
 const GoldenScannerDashboard = () => {
   const { user } = useAuth();
-  const [predictions, setPredictions] = useState([]);
+  const [patterns, setPatterns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [marketStatus, setMarketStatus] = useState('');
   const [dataTimestamp, setDataTimestamp] = useState('');
+  const [avgCandlesToBreakout, setAvgCandlesToBreakout] = useState(3.87); // Default from documentation
   
   const marketHoursService = new MarketHoursService();
   
@@ -87,11 +21,39 @@ const GoldenScannerDashboard = () => {
       try {
         setLoading(true);
         
-        // In a real implementation, this would fetch from the API
-        // For now, use mock data with a slight delay to simulate API call
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        // Fetch high-confidence patterns directly from cached_patterns table
+        const { data: patternsData, error: patternsError } = await supabase
+          .from('cached_patterns')
+          .select('*')
+          .gte('confidence_score', 75) // Only high-confidence patterns (75%+)
+          .order('confidence_score', { ascending: false })
+          .limit(10);
         
-        setPredictions(HIGH_CONFIDENCE_PREDICTIONS);
+        if (patternsError) {
+          throw new Error(`Error fetching patterns: ${patternsError.message}`);
+        }
+
+        if (patternsData && patternsData.length > 0) {
+          setPatterns(patternsData);
+        } else {
+          setPatterns([]);
+          setError('No high-confidence patterns found. Try adjusting filters or check back later.');
+        }
+        
+        // Also fetch backtest metrics to get avg candles to breakout
+        const { data: backtestData, error: backtestError } = await supabase
+          .from('backtest_results')
+          .select('avg(days_to_breakout)')
+          .single();
+          
+        if (!backtestError && backtestData && backtestData.avg) {
+          // Ensure we're setting a number, not an object
+          const avgDays = parseFloat(backtestData.avg);
+          if (!isNaN(avgDays)) {
+            setAvgCandlesToBreakout(avgDays);
+          }
+        }
+        
         setDataTimestamp(new Date().toISOString());
         
         const status = marketHoursService.getCurrentMarketStatus();
@@ -99,8 +61,8 @@ const GoldenScannerDashboard = () => {
         
         setLoading(false);
       } catch (err) {
-        console.error('Error fetching predictions:', err);
-        setError('Failed to load predictions. Please try again.');
+        console.error('Error fetching patterns:', err);
+        setError('Failed to load patterns. Please try again.');
         setLoading(false);
       }
     };
@@ -130,14 +92,6 @@ const GoldenScannerDashboard = () => {
       default:
         return 'default';
     }
-  };
-  
-  const getConfidenceColor = (confidence) => {
-    if (confidence >= 90) return '#4caf50';
-    if (confidence >= 80) return '#8bc34a';
-    if (confidence >= 70) return '#ffeb3b';
-    if (confidence >= 60) return '#ff9800';
-    return '#f44336';
   };
   
   return (
@@ -197,127 +151,24 @@ const GoldenScannerDashboard = () => {
             High Confidence Predictions
           </Typography>
           
-          <Grid container spacing={3}>
-            {predictions.map((prediction, index) => (
-              <Grid item xs={12} md={6} key={index}>
-                <Card 
-                  elevation={3}
-                  sx={{ 
-                    height: '100%',
-                    borderLeft: `6px solid ${getConfidenceColor(prediction.confidence)}`,
-                    transition: 'transform 0.2s',
-                    '&:hover': {
-                      transform: 'translateY(-4px)',
-                      boxShadow: 6
-                    }
-                  }}
-                >
-                  <CardContent>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-                      <Typography variant="h5" component="div">
-                        {prediction.symbol}
-                      </Typography>
-                      <Chip 
-                        label={`${prediction.confidence}% Confidence`}
-                        sx={{ 
-                          bgcolor: getConfidenceColor(prediction.confidence),
-                          color: 'white',
-                          fontWeight: 'bold'
-                        }}
-                      />
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Pattern:
-                      </Typography>
-                      <Typography variant="body1">
-                        {prediction.pattern}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Direction:
-                      </Typography>
-                      <Typography 
-                        variant="body1"
-                        sx={{ 
-                          color: prediction.direction === 'Bullish' ? '#4caf50' : '#f44336',
-                          fontWeight: 'bold'
-                        }}
-                      >
-                        {prediction.direction}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Timeframe:
-                      </Typography>
-                      <Typography variant="body1">
-                        {prediction.timeframe}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Current Price:
-                      </Typography>
-                      <Typography variant="body1" fontWeight="bold">
-                        ${prediction.currentPrice.toFixed(2)}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Entry Price:
-                      </Typography>
-                      <Typography variant="body1">
-                        ${prediction.entryPrice.toFixed(2)}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Target Price:
-                      </Typography>
-                      <Typography variant="body1" color="#4caf50" fontWeight="bold">
-                        ${prediction.targetPrice.toFixed(2)}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Stop Loss:
-                      </Typography>
-                      <Typography variant="body1" color="#f44336">
-                        ${prediction.stopLoss.toFixed(2)}
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Potential Profit:
-                      </Typography>
-                      <Typography variant="body1" color="#4caf50" fontWeight="bold">
-                        {prediction.potentialProfit.toFixed(1)}%
-                      </Typography>
-                    </Box>
-                    
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Expected Breakout:
-                      </Typography>
-                      <Typography variant="body1">
-                        {prediction.expectedBreakout}
-                      </Typography>
-                    </Box>
-                  </CardContent>
-                </Card>
+          {patterns.length === 0 ? (
+            <Alert severity="info" sx={{ mb: 3 }}>
+              No patterns found. Please try again later or adjust the search criteria.
+            </Alert>
+          ) : (
+            <Box sx={{ flexGrow: 1 }}>
+              <Grid container spacing={3}>
+                {patterns.map((pattern) => (
+                  <Grid item xs={12} md={6} key={pattern.id?.toString() || Math.random().toString()}>
+                    <PatternCard 
+                      pattern={pattern}
+                      avgCandlesToBreakout={avgCandlesToBreakout}
+                    />
+                  </Grid>
+                ))}
               </Grid>
-            ))}
-          </Grid>
+            </Box>
+          )}
           
           <Box sx={{ mt: 4, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">

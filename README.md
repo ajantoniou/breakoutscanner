@@ -17,6 +17,7 @@ A sophisticated multi-timeframe pattern detection and trading scanner with accur
 
 - Node.js (v16 or higher)
 - npm (v7 or higher)
+- Supabase account for database and authentication
 
 ### Installation
 
@@ -31,12 +32,44 @@ A sophisticated multi-timeframe pattern detection and trading scanner with accur
    npm install
    ```
 
-3. Run the application locally:
+3. Set up environment variables:
+   ```
+   cp .env.example .env
+   ```
+   Then edit the `.env` file with your Supabase credentials.
+
+4. Set up the database:
+   ```
+   ./run-migrations.sh
+   ```
+   This will create all required tables in your Supabase project.
+
+5. Run the application locally:
    ```
    ./deploy-local.sh
    ```
 
-4. Access the application at http://localhost:3000
+6. Access the application at http://localhost:3000
+
+## Database Setup
+
+The application uses Supabase for data storage. The database schema includes:
+
+- **market_data_cache**: Stores cached market data for faster retrieval
+- **market_data_metadata**: Metadata about cached market data
+- **detected_patterns**: Stores detected trading patterns
+- **cached_patterns**: Stores generated pattern templates
+- **backtest_results**: Stores results from pattern backtests
+
+Run the database migrations to set up all tables:
+```
+./run-migrations.sh
+```
+
+Verify database setup:
+```
+cat verify-tables.sql | supabase sql
+```
 
 ## Scanner Modes
 

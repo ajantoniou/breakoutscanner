@@ -53,21 +53,19 @@ const TabPanel = (props: TabPanelProps) => {
 interface ScannerDashboardProps {
   dayTradingResults: (PatternData | BreakoutData)[];
   swingTradingResults: (PatternData | BreakoutData)[];
-  goldenScannerResults: (PatternData | BreakoutData)[];
   backtestStats: {
     avgCandlesToBreakout: Record<string, number>;
     winRateByTimeframe: Record<string, number>;
     profitFactorByTimeframe: Record<string, number>;
   };
   isLoading: boolean;
-  activeScanner: 'day' | 'swing' | 'golden' | null;
-  onRunScanner: (mode: 'day' | 'swing' | 'golden', timeframe: string) => void;
+  activeScanner: 'day' | 'swing' | null;
+  onRunScanner: (mode: 'day' | 'swing', timeframe: string) => void;
 }
 
 const ScannerDashboard: React.FC<ScannerDashboardProps> = ({ 
   dayTradingResults, 
-  swingTradingResults, 
-  goldenScannerResults,
+  swingTradingResults,
   backtestStats,
   isLoading,
   activeScanner,
@@ -85,10 +83,8 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   const getCurrentScannerMode = () => {
     if (activeTab === 0) {
       return 'day';
-    } else if (activeTab === 1) {
-      return 'swing';
     } else {
-      return 'golden';
+      return 'swing';
     }
   };
   
@@ -147,10 +143,8 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   const getCurrentResults = () => {
     if (activeTab === 0) {
       return filterResults(dayTradingResults);
-    } else if (activeTab === 1) {
-      return filterResults(swingTradingResults);
     } else {
-      return filterResults(goldenScannerResults);
+      return filterResults(swingTradingResults);
     }
   };
   
@@ -173,7 +167,6 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
         >
           <Tab label={`Day Trading (${dayTradingResults.length})`} />
           <Tab label={`Swing Trading (${swingTradingResults.length})`} />
-          <Tab label={`Golden Scanner (${goldenScannerResults.length})`} />
         </Tabs>
       </Paper>
       
@@ -225,12 +218,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
                 label="Timeframe"
                 onChange={handleTimeframeChange}
               >
-                {Object.keys(TIMEFRAMES)
-                  .filter(tf => allowedTimeframes.includes(tf))
-                  .map(tf => (
-                    <MenuItem key={tf} value={tf}>{tf}</MenuItem>
-                  ))
-                }
+                {allowedTimeframes.map((tf) => (
+                  <MenuItem key={tf} value={tf}>{tf}</MenuItem>
+                ))}
               </Select>
             </FormControl>
           </Grid>
@@ -241,242 +231,134 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
               color="primary" 
               fullWidth
               onClick={() => onRunScanner(currentMode, selectedTimeframe)}
-              disabled={isLoading && activeScanner === currentMode}
-              startIcon={isLoading && activeScanner === currentMode ? <CircularProgress size={20} color="inherit" /> : null}
+              disabled={isLoading}
+              startIcon={isLoading && activeScanner === currentMode ? <CircularProgress size={16} color="inherit" /> : null}
             >
               {isLoading && activeScanner === currentMode ? 'Scanning...' : 'Run Scanner'}
             </Button>
           </Grid>
         </Grid>
       </Box>
-
-      {activeTab === 0 && (
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Day Trading Scanner is restricted to 15min, 30min, and 1hour timeframes and scans 20 high-volume stocks with 0 DTE options capability and key indices.
-        </Alert>
-      )}
-
-      {activeTab === 1 && (
-        <Alert severity="info" sx={{ mb: 3 }}>
-          Swing Trading Scanner is restricted to 1hour, 4hour, daily, and weekly timeframes and scans 100 high-options-volume stocks with strong volatility profiles.
-        </Alert>
-      )}
-
+      
       <Box sx={{ mb: 3 }}>
         <Paper elevation={3} sx={{ p: 2 }}>
           <Typography variant="h6" gutterBottom>
-            Backtest Statistics for {selectedTimeframe}
+            Backtest Stats for {selectedTimeframe}
           </Typography>
           <Grid container spacing={2}>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={1} sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">
-                  Avg. Candles to Breakout
+            <Grid item xs={4}>
+              <Box sx={{ textAlign: 'center', p: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Avg Candles to Breakout
                 </Typography>
-                <Typography variant="h4" color="primary">
+                <Typography variant="h6">
                   {avgCandlesToBreakout.toFixed(1)}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Average number of candles before breakout occurs
-                </Typography>
-              </Paper>
+              </Box>
             </Grid>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={1} sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">
+            <Grid item xs={4}>
+              <Box sx={{ textAlign: 'center', p: 1 }}>
+                <Typography variant="body2" color="text.secondary">
                   Win Rate
                 </Typography>
-                <Typography variant="h4" color={winRate >= 60 ? 'success.main' : 'warning.main'}>
-                  {winRate.toFixed(1)}%
+                <Typography variant="h6">
+                  {(winRate * 100).toFixed(1)}%
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Percentage of profitable trades
-                </Typography>
-              </Paper>
+              </Box>
             </Grid>
-            <Grid item xs={12} md={4}>
-              <Paper elevation={1} sx={{ p: 2, bgcolor: 'background.default' }}>
-                <Typography variant="subtitle2" color="text.secondary">
+            <Grid item xs={4}>
+              <Box sx={{ textAlign: 'center', p: 1 }}>
+                <Typography variant="body2" color="text.secondary">
                   Profit Factor
                 </Typography>
-                <Typography variant="h4" color={profitFactor >= 2 ? 'success.main' : 'warning.main'}>
+                <Typography variant="h6">
                   {profitFactor.toFixed(2)}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  Ratio of gross profits to gross losses
-                </Typography>
-              </Paper>
+              </Box>
             </Grid>
           </Grid>
         </Paper>
       </Box>
       
       <TabPanel value={activeTab} index={0}>
+        <Typography variant="h6" gutterBottom>
+          Day Trading Patterns
+        </Typography>
         {isLoading && activeScanner === 'day' ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
             <CircularProgress />
           </Box>
         ) : dayTradingResults.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              No Day Trading Patterns Found
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              Run the scanner to find day trading opportunities.
-            </Typography>
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => onRunScanner('day', selectedTimeframe)}
-            >
-              Run Day Trading Scanner
-            </Button>
-          </Paper>
-        ) : currentResults.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              No Results Match Your Filters
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Try adjusting your filter criteria.
-            </Typography>
-          </Paper>
+          <Alert severity="info">
+            No day trading patterns found. Try running the scanner for a different timeframe.
+          </Alert>
         ) : (
-          <Grid container spacing={3}>
-            {currentResults.map(pattern => (
-              <Grid item xs={12} sm={6} md={4} key={pattern.id}>
-                <PatternCard 
-                  pattern={pattern} 
-                  avgCandlesToBreakout={avgCandlesToBreakout}
-                />
-              </Grid>
-            ))}
-          </Grid>
+          <>
+            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+              <Chip 
+                label={`All Patterns: ${dayTradingResults.length}`} 
+                color="primary" 
+                variant="outlined" 
+              />
+              <Chip 
+                label={`Filtered: ${activeTab === 0 ? currentResults.length : 0}`} 
+                color="secondary" 
+              />
+            </Stack>
+            
+            <Grid container spacing={3}>
+              {activeTab === 0 && currentResults.map((pattern, index) => (
+                <Grid item xs={12} md={6} lg={4} key={index}>
+                  <PatternCard 
+                    pattern={pattern}
+                    avgCandlesToBreakout={avgCandlesToBreakout}
+                  />
+                </Grid>
+              ))}
+            </Grid>
+          </>
         )}
       </TabPanel>
       
       <TabPanel value={activeTab} index={1}>
+        <Typography variant="h6" gutterBottom>
+          Swing Trading Patterns
+        </Typography>
         {isLoading && activeScanner === 'swing' ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
             <CircularProgress />
           </Box>
         ) : swingTradingResults.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              No Swing Trading Patterns Found
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              Run the scanner to find swing trading opportunities.
-            </Typography>
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => onRunScanner('swing', selectedTimeframe)}
-            >
-              Run Swing Trading Scanner
-            </Button>
-          </Paper>
-        ) : currentResults.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              No Results Match Your Filters
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Try adjusting your filter criteria.
-            </Typography>
-          </Paper>
+          <Alert severity="info">
+            No swing trading patterns found. Try running the scanner for a different timeframe.
+          </Alert>
         ) : (
-          <Grid container spacing={3}>
-            {currentResults.map(pattern => (
-              <Grid item xs={12} sm={6} md={4} key={pattern.id}>
-                <PatternCard 
-                  pattern={pattern} 
-                  avgCandlesToBreakout={avgCandlesToBreakout}
-                />
-              </Grid>
-            ))}
-          </Grid>
+          <>
+            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+              <Chip 
+                label={`All Patterns: ${swingTradingResults.length}`} 
+                color="primary" 
+                variant="outlined" 
+              />
+              <Chip 
+                label={`Filtered: ${activeTab === 1 ? currentResults.length : 0}`} 
+                color="secondary" 
+              />
+            </Stack>
+            
+            <Grid container spacing={3}>
+              {activeTab === 1 && currentResults.map((pattern, index) => (
+                <Grid item xs={12} md={6} lg={4} key={index}>
+                  <PatternCard 
+                    pattern={pattern}
+                    avgCandlesToBreakout={avgCandlesToBreakout}
+                  />
+                </Grid>
+              ))}
+            </Grid>
+          </>
         )}
       </TabPanel>
-      
-      <TabPanel value={activeTab} index={2}>
-        {isLoading && activeScanner === 'golden' ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : goldenScannerResults.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              No Golden Scanner Patterns Found
-            </Typography>
-            <Typography variant="body1" color="text.secondary" paragraph>
-              Run the scanner to find high-confidence multi-timeframe opportunities.
-            </Typography>
-            <Button 
-              variant="contained" 
-              color="primary"
-              onClick={() => onRunScanner('golden', selectedTimeframe)}
-            >
-              Run Golden Scanner
-            </Button>
-          </Paper>
-        ) : currentResults.length === 0 ? (
-          <Paper elevation={3} sx={{ p: 4, textAlign: 'center' }}>
-            <Typography variant="h6" gutterBottom>
-              No Results Match Your Filters
-            </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Try adjusting your filter criteria.
-            </Typography>
-          </Paper>
-        ) : (
-          <Grid container spacing={3}>
-            {currentResults.map(pattern => (
-              <Grid item xs={12} sm={6} md={4} key={pattern.id}>
-                <PatternCard 
-                  pattern={pattern} 
-                  avgCandlesToBreakout={avgCandlesToBreakout}
-                />
-              </Grid>
-            ))}
-          </Grid>
-        )}
-      </TabPanel>
-      
-      <Box sx={{ mt: 3 }}>
-        <Paper elevation={3} sx={{ p: 2 }}>
-          <Typography variant="subtitle1" gutterBottom>
-            Scanner Statistics
-          </Typography>
-          <Stack direction="row" spacing={2} sx={{ mb: 1 }}>
-            <Chip 
-              label={`Total Patterns: ${
-                activeTab === 0 
-                  ? dayTradingResults.length 
-                  : activeTab === 1 
-                    ? swingTradingResults.length 
-                    : goldenScannerResults.length
-              }`} 
-              color="primary" 
-            />
-            <Chip 
-              label={`Filtered Results: ${currentResults.length}`} 
-              color="secondary" 
-            />
-            <Chip 
-              label={`Bullish: ${currentResults.filter(r => r.direction === 'bullish').length}`} 
-              color="success" 
-            />
-            <Chip 
-              label={`Bearish: ${currentResults.filter(r => r.direction === 'bearish').length}`} 
-              color="error" 
-            />
-          </Stack>
-          <Typography variant="body2" color="text.secondary">
-            Last updated: {new Date().toLocaleString()}
-          </Typography>
-        </Paper>
-      </Box>
     </Box>
   );
 };

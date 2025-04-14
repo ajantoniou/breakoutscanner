@@ -313,24 +313,42 @@ export const authService = new AuthService();
 
 // Create demo user on initial load (in production)
 if (import.meta.env.PROD) {
-  console.log('Production environment detected, creating demo user...');
-  // Use setTimeout to ensure this runs after everything else has loaded
-  setTimeout(() => {
-    authService.createDemoUser()
-      .then(({ error, user }) => {
-        if (!error) {
-          console.log('Demo user is ready to use');
-          if (user) {
-            console.log('New demo user created');
-          } else {
-            console.log('Using existing demo user');
-          }
-        } else {
-          console.error('Failed to ensure demo user exists:', error);
-        }
-      })
-      .catch(err => {
-        console.error('Error in demo user creation:', err);
+  console.log('Production environment detected, ensuring demo user exists...');
+  // Explicitly create the demo user right away to ensure it exists
+  (async () => {
+    try {
+      console.log('Attempting to create demo user with credentials:', DEMO_EMAIL, DEMO_PASSWORD);
+      
+      // First try to sign in with demo credentials
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: DEMO_EMAIL,
+        password: DEMO_PASSWORD,
       });
-  }, 1000);
+      
+      // If sign-in fails, create the user
+      if (signInError) {
+        console.log('Demo user sign-in failed, creating new user:', signInError.message);
+        const { data, error } = await supabase.auth.signUp({
+          email: DEMO_EMAIL,
+          password: DEMO_PASSWORD,
+          options: {
+            data: {
+              username: 'Demo User',
+              role: 'user',
+            },
+          },
+        });
+        
+        if (error) {
+          console.error('Error creating demo user:', error);
+        } else {
+          console.log('Demo user created successfully:', data.user?.email);
+        }
+      } else {
+        console.log('Demo user already exists and credentials are valid');
+      }
+    } catch (err) {
+      console.error('Error in demo user initialization:', err);
+    }
+  })();
 }

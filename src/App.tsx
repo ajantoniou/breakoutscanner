@@ -6,7 +6,6 @@ import { AuthProviderWrapper as AuthProvider } from '@/services/auth/AuthProvide
 // import Login from '@/components/auth/Login'; 
 import Navbar from '@/components/layout/Navbar';
 import ScannerDashboard from '@/components/scanner/ScannerDashboard';
-import GoldenScannerDashboard from '@/components/scanner/GoldenScannerDashboard';
 import BacktestDashboard from '@/components/backtest/BacktestDashboard';
 import YahooBacktestDashboard from '@/components/backtest/YahooBacktestDashboard';
 import NotificationCenter from '@/components/notifications/NotificationCenter';
@@ -19,47 +18,144 @@ import {
   runScanner, 
   getBacktestStats, 
   fetchDayTradingResults, 
-  fetchSwingTradingResults, 
-  fetchGoldenScannerResults 
+  fetchSwingTradingResults
 } from '@/services/api/apiService';
 import { toast } from "sonner";
+// Import our GoldenScanner page component
+import GoldenScanner from '@/pages/GoldenScanner';
 
 // Create theme
 const theme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#3f51b5',
+      main: '#4A80FF', // Brighter blue for primary actions
     },
     secondary: {
-      main: '#f50057',
+      main: '#FF5C8D', // Vibrant pink for secondary actions
     },
     background: {
-      default: '#121212',
-      paper: '#1e1e1e',
+      default: '#111827', // Dark blue-gray background
+      paper: '#1F2937', // Lighter blue-gray for cards & components
+    },
+    text: {
+      primary: '#F9FAFB',
+      secondary: '#D1D5DB',
+    },
+    success: {
+      main: '#10B981', // Vibrant green
+    },
+    error: {
+      main: '#EF4444', // Vibrant red
+    },
+    warning: {
+      main: '#F59E0B', // Vibrant amber
+    },
+    info: {
+      main: '#3B82F6', // Blue
     },
   },
   typography: {
-    fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Inter", "Roboto", "Helvetica", "Arial", sans-serif',
+    h1: {
+      fontWeight: 700,
+      fontSize: '2.5rem',
+    },
+    h2: {
+      fontWeight: 700,
+      fontSize: '2rem',
+    },
+    h3: {
+      fontWeight: 600,
+      fontSize: '1.75rem',
+    },
     h4: {
       fontWeight: 600,
+      fontSize: '1.5rem',
+    },
+    h5: {
+      fontWeight: 600,
+      fontSize: '1.25rem',
     },
     h6: {
+      fontWeight: 600,
+      fontSize: '1rem',
+    },
+    button: {
+      textTransform: 'none',
       fontWeight: 500,
     },
   },
+  shape: {
+    borderRadius: 8,
+  },
   components: {
+    MuiAppBar: {
+      styleOverrides: {
+        root: {
+          boxShadow: '0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24)',
+          backgroundImage: 'none',
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
           borderRadius: 8,
+          textTransform: 'none',
+          boxShadow: 'none',
+          '&:hover': {
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          },
+        },
+        containedPrimary: {
+          backgroundImage: 'linear-gradient(to right, #4A80FF, #3B68DF)',
+          '&:hover': {
+            backgroundImage: 'linear-gradient(to right, #3B68DF, #2C52C7)',
+          },
+        },
+        containedSecondary: {
+          backgroundImage: 'linear-gradient(to right, #FF5C8D, #E64C7D)',
+          '&:hover': {
+            backgroundImage: 'linear-gradient(to right, #E64C7D, #D04071)',
+          },
+        },
+      },
+    },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          borderRadius: 12,
+          transition: 'transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out',
+          '&:hover': {
+            boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+          },
         },
       },
     },
     MuiPaper: {
       styleOverrides: {
         root: {
+          borderRadius: 12,
+        },
+      },
+    },
+    MuiChip: {
+      styleOverrides: {
+        root: {
           borderRadius: 8,
+          fontWeight: 500,
+        },
+      },
+    },
+    MuiTableCell: {
+      styleOverrides: {
+        root: {
+          borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+        },
+        head: {
+          fontWeight: 600,
         },
       },
     },
@@ -70,7 +166,6 @@ function App() {
   // State for scanner results
   const [dayTradingResults, setDayTradingResults] = useState<(PatternData | BreakoutData)[]>([]);
   const [swingTradingResults, setSwingTradingResults] = useState<(PatternData | BreakoutData)[]>([]);
-  const [goldenScannerResults, setGoldenScannerResults] = useState<(PatternData | BreakoutData)[]>([]);
   
   // State for backtest stats
   const [backtestStats, setBacktestStats] = useState({
@@ -81,7 +176,7 @@ function App() {
   
   // Loading and error states
   const [isLoading, setIsLoading] = useState(false);
-  const [activeScanner, setActiveScanner] = useState<'day' | 'swing' | 'golden' | null>(null);
+  const [activeScanner, setActiveScanner] = useState<'day' | 'swing' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // Function to fetch initial data
@@ -95,18 +190,11 @@ function App() {
       setBacktestStats(stats);
       console.log('Backtest stats fetched:', stats);
 
-      // Fetch golden scanner results by default (or based on last used timeframe)
-      // Using '1h' as a default initial timeframe
-      setActiveScanner('golden');
-      const initialGoldenResults = await fetchGoldenScannerResults('1h');
-      setGoldenScannerResults(initialGoldenResults);
-      console.log('Initial golden results fetched:', initialGoldenResults.length);
-      
-      // Optionally pre-fetch day/swing results if needed, or fetch on tab click
-      // const initialDayResults = await fetchDayTradingResults('1h');
-      // setDayTradingResults(initialDayResults);
-      // const initialSwingResults = await fetchSwingTradingResults('1h');
-      // setSwingTradingResults(initialSwingResults);
+      // Pre-fetch day/swing results
+      const initialDayResults = await fetchDayTradingResults('1h');
+      setDayTradingResults(initialDayResults);
+      const initialSwingResults = await fetchSwingTradingResults('1h');
+      setSwingTradingResults(initialSwingResults);
 
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -124,7 +212,7 @@ function App() {
   }, [fetchInitialData]);
 
   // Function to handle running a specific scanner
-  const handleRunScanner = useCallback(async (mode: 'day' | 'swing' | 'golden', timeframe: string) => {
+  const handleRunScanner = useCallback(async (mode: 'day' | 'swing', timeframe: string) => {
     setIsLoading(true);
     setActiveScanner(mode);
     setError(null);
@@ -140,10 +228,6 @@ function App() {
         setSwingTradingResults(results);
         console.log('Swing trading results updated:', results.length);
         toast.success(`Swing Trading scan for ${timeframe} complete! Found ${results.length} patterns.`);
-      } else {
-        setGoldenScannerResults(results);
-        console.log('Golden scanner results updated:', results.length);
-        toast.success(`Golden Scanner scan for ${timeframe} complete! Found ${results.length} patterns.`);
       }
     } catch (err) {
       console.error(`Error running ${mode} scanner:`, err);
@@ -163,19 +247,18 @@ function App() {
           <Navbar />
           <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, padding: 2 }}>
             {/* Optional: Display global error messages */}
-            {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+            {error && <div className="error-message">{error}</div>}
             <Routes>
               {/* Login route now redirects immediately */}
               <Route path="/login" element={<Navigate to="/golden-scanner" replace />} />
               
-              {/* Pass REAL props to ScannerDashboard */}
+              {/* Scanner Dashboard */}
               <Route 
                 path="/scanner" 
                 element={(
                   <ScannerDashboard 
                     dayTradingResults={dayTradingResults} 
                     swingTradingResults={swingTradingResults} 
-                    goldenScannerResults={goldenScannerResults}
                     backtestStats={backtestStats}
                     isLoading={isLoading}
                     activeScanner={activeScanner}
@@ -183,21 +266,14 @@ function App() {
                   />
                 )}
               />
+              
+              {/* GoldenScanner fetches data directly from Supabase */}
               <Route 
                 path="/golden-scanner" 
-                element={(
-                  <ScannerDashboard 
-                    dayTradingResults={dayTradingResults} 
-                    swingTradingResults={swingTradingResults} 
-                    goldenScannerResults={goldenScannerResults}
-                    backtestStats={backtestStats}
-                    isLoading={isLoading}
-                    activeScanner={activeScanner}
-                    onRunScanner={handleRunScanner}
-                  />
-                )}
+                element={<GoldenScanner />}
               />
-              <Route path="/backtest" element={<BacktestDashboard />} />
+              
+              <Route path="/backtest" element={<BacktestDashboard signals={dayTradingResults} />} />
               <Route path="/yahoo-backtest" element={<YahooBacktestDashboard />} />
               <Route path="/notifications" element={<NotificationCenter />} />
               

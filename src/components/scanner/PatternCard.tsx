@@ -2,46 +2,53 @@ import React from 'react';
 import { 
   Box, 
   Typography, 
-  Paper, 
-  Grid, 
-  Chip,
   Card,
   CardContent,
   CardActions,
   Button,
   Divider,
-  Stack,
-  LinearProgress
+  Chip,
+  Grid
 } from '@mui/material';
-import { PatternData } from '@/services/types/patternTypes';
-import { BreakoutData } from '@/services/api/marketData/patternDetection/breakoutDetector';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import WarningIcon from '@mui/icons-material/Warning';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import { formatDistanceToNowStrict } from 'date-fns';
 
 interface PatternCardProps {
-  pattern: PatternData | BreakoutData;
-  avgCandlesToBreakout: number;
+  pattern: {
+    id: string;
+    symbol: string;
+    pattern_type: string;
+    timeframe: string;
+    entry_price: number;
+    target_price: number;
+    stop_loss?: number;
+    confidence_score: number;
+    created_at: string;
+    channel_type?: string;
+    volume_confirmation?: boolean;
+    trendline_break?: boolean;
+    ema_pattern?: string;
+    status: string;
+    risk_reward_ratio?: number;
+  };
+  avgCandlesToBreakout?: number;
 }
 
 const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout }) => {
-  // Determine if pattern is a breakout
-  const isBreakout = 'breakoutType' in pattern;
-  
   // Format entry, target, and stop loss prices
   const formatPrice = (price: number) => {
     return price < 10 ? price.toFixed(3) : price.toFixed(2);
   };
   
-  // Format potential profit
-  const formatProfit = (profit: number) => {
-    return profit.toFixed(2) + '%';
-  };
+  // Calculate potential profit percentage
+  const potentialProfit = ((pattern.target_price - pattern.entry_price) / pattern.entry_price) * 100;
   
   // Format risk/reward ratio
-  const formatRiskReward = (ratio: number) => {
+  const formatRiskReward = (ratio: number | undefined) => {
+    if (ratio === undefined || ratio === null || !isFinite(ratio)) return 'N/A';
     return ratio.toFixed(2);
   };
   
@@ -56,25 +63,27 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
   
   // Determine confidence level text
   const getConfidenceText = (score: number) => {
-    if (score >= 90) return 'Very High';
     if (score >= 80) return 'High';
-    if (score >= 70) return 'Moderate';
-    if (score >= 60) return 'Low';
-    return 'Very Low';
+    if (score >= 60) return 'Medium';
+    return 'Low';
   };
   
-  // Determine pattern type display
-  const getPatternTypeDisplay = () => {
-    if (isBreakout) {
-      return (pattern as BreakoutData).breakoutType;
-    } else {
-      return (pattern as PatternData).patternType;
-    }
-  };
+  // Determine if the pattern is bullish based on pattern_type
+  const isBullish = pattern.pattern_type.includes('Bull') || 
+                   pattern.pattern_type.includes('Cup') || 
+                   pattern.pattern_type.includes('Bottom') ||
+                   pattern.pattern_type.includes('Ascending');
+  
+  const direction = isBullish ? 'bullish' : 'bearish';
+  
+  // Format the time since creation
+  const timeAgo = formatDistanceToNowStrict(new Date(pattern.created_at), { addSuffix: true });
   
   // Calculate expected breakout time based on average candles to breakout
   const getExpectedBreakoutTime = () => {
-    const detectedAt = new Date(pattern.detectedAt);
+    if (!avgCandlesToBreakout) return 'N/A';
+    
+    const createdAt = new Date(pattern.created_at);
     let timeframeInMinutes = 0;
     
     // Convert timeframe to minutes
@@ -108,12 +117,12 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     }
     
     // Calculate expected breakout time
-    const expectedBreakoutTime = new Date(detectedAt.getTime() + (avgCandlesToBreakout * timeframeInMinutes * 60 * 1000));
+    const expectedBreakoutTime = new Date(createdAt.getTime() + (avgCandlesToBreakout * timeframeInMinutes * 60 * 1000));
     
     // Format date for display
     return expectedBreakoutTime.toLocaleString();
   };
-  
+
   return (
     <Card elevation={3} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <CardContent sx={{ flexGrow: 1 }}>
@@ -122,15 +131,15 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
             {pattern.symbol}
           </Typography>
           <Chip 
-            icon={pattern.direction === 'bullish' ? <TrendingUpIcon /> : <TrendingDownIcon />}
-            label={pattern.direction === 'bullish' ? 'Bullish' : 'Bearish'}
-            color={pattern.direction === 'bullish' ? 'success' : 'error'}
+            icon={isBullish ? <TrendingUpIcon /> : <TrendingDownIcon />}
+            label={isBullish ? 'Bullish' : 'Bearish'}
+            color={isBullish ? 'success' : 'error'}
             size="small"
           />
         </Box>
         
         <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-          {getPatternTypeDisplay()} ({pattern.timeframe})
+          {pattern.pattern_type} ({pattern.timeframe})
         </Typography>
         
         <Divider sx={{ my: 1.5 }} />
@@ -138,26 +147,26 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         <Grid container spacing={1} sx={{ mb: 1.5 }}>
           <Grid item xs={4}>
             <Typography variant="caption" color="text.secondary">
-              Entry
+              Detected
             </Typography>
             <Typography variant="body2" fontWeight="bold">
-              ${formatPrice(pattern.entry)}
+              {timeAgo}
             </Typography>
           </Grid>
           <Grid item xs={4}>
             <Typography variant="caption" color="text.secondary">
-              Target
+              Confidence
             </Typography>
-            <Typography variant="body2" fontWeight="bold" color="success.main">
-              ${formatPrice(pattern.target)}
+            <Typography variant="body2" fontWeight="bold">
+              {pattern.confidence_score}% ({getConfidenceText(pattern.confidence_score)})
             </Typography>
           </Grid>
           <Grid item xs={4}>
             <Typography variant="caption" color="text.secondary">
-              Stop Loss
+              Status
             </Typography>
-            <Typography variant="body2" fontWeight="bold" color="error.main">
-              ${formatPrice(pattern.stopLoss)}
+            <Typography variant="body2" fontWeight="bold">
+              {pattern.status}
             </Typography>
           </Grid>
         </Grid>
@@ -165,57 +174,75 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         <Grid container spacing={1} sx={{ mb: 1.5 }}>
           <Grid item xs={6}>
             <Typography variant="caption" color="text.secondary">
-              Risk/Reward
+              Entry
             </Typography>
             <Typography variant="body2" fontWeight="bold">
-              {formatRiskReward(pattern.riskRewardRatio)}
+              ${formatPrice(pattern.entry_price)}
             </Typography>
           </Grid>
           <Grid item xs={6}>
             <Typography variant="caption" color="text.secondary">
-              Potential Profit
+              Target
             </Typography>
             <Typography variant="body2" fontWeight="bold" color="success.main">
-              {formatProfit(pattern.potentialProfit)}
+              ${formatPrice(pattern.target_price)} (+{potentialProfit.toFixed(1)}%)
+            </Typography>
+          </Grid>
+        </Grid>
+        
+        <Grid container spacing={1} sx={{ mb: 1.5 }}>
+          <Grid item xs={6}>
+            <Typography variant="caption" color="text.secondary">
+              Stop Loss
+            </Typography>
+            <Typography variant="body2" fontWeight="bold" color="error.main">
+              ${pattern.stop_loss ? formatPrice(pattern.stop_loss) : 'N/A'}
+            </Typography>
+          </Grid>
+          <Grid item xs={6}>
+            <Typography variant="caption" color="text.secondary">Channel Type</Typography>
+            <Typography variant="body2" fontWeight="bold">
+              {pattern.channel_type || 'N/A'}
             </Typography>
           </Grid>
         </Grid>
         
         <Box sx={{ mb: 1.5 }}>
           <Typography variant="caption" color="text.secondary" sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span>Confidence Score</span>
-            <span>{pattern.confidenceScore}% ({getConfidenceText(pattern.confidenceScore)})</span>
+            <span>Risk/Reward</span>
+            <span>{formatRiskReward(pattern.risk_reward_ratio)}</span>
           </Typography>
-          <LinearProgress 
-            variant="determinate" 
-            value={pattern.confidenceScore} 
-            color={
-              pattern.confidenceScore >= 80 ? 'success' : 
-              pattern.confidenceScore >= 60 ? 'warning' : 
-              'error'
-            }
-            sx={{ height: 8, borderRadius: 4 }}
-          />
         </Box>
         
-        {pattern.multiTimeframeConfirmation && (
+        {pattern.volume_confirmation && (
           <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
             <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
             <Typography variant="body2" color="success.main">
-              Multi-Timeframe Confirmation
+              Volume Confirmation
             </Typography>
           </Box>
         )}
         
-        <Box sx={{ display: 'flex', alignItems: 'center' }}>
-          <AccessTimeIcon color="info" fontSize="small" sx={{ mr: 0.5 }} />
-          <Typography variant="body2" color="info.main">
-            Expected Breakout: {getExpectedBreakoutTime()}
-          </Typography>
-        </Box>
+        {pattern.trendline_break && (
+          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1.5 }}>
+            <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
+            <Typography variant="body2" color="success.main">
+              Trendline Break
+            </Typography>
+          </Box>
+        )}
+        
+        {avgCandlesToBreakout && (
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <AccessTimeIcon color="info" fontSize="small" sx={{ mr: 0.5 }} />
+            <Typography variant="body2" color="info.main">
+              Expected Breakout: {getExpectedBreakoutTime()}
+            </Typography>
+          </Box>
+        )}
         
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          Detected: {new Date(pattern.detectedAt).toLocaleString()}
+          Created: {new Date(pattern.created_at).toLocaleString()}
         </Typography>
       </CardContent>
       
