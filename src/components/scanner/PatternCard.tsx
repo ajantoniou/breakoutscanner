@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React from 'react';
 import { 
   Box, 
   Typography, 
@@ -8,27 +8,16 @@ import {
   Button,
   Divider,
   Chip,
-  Stack,
-  Tooltip,
-  Grid
+  Grid,
+  alpha
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
-import WarningIcon from '@mui/icons-material/Warning';
-import ArchiveIcon from '@mui/icons-material/Archive';
-import { format, differenceInHours, differenceInDays } from 'date-fns';
-import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
-import { BreakoutTimeService } from '@/services/pattern/breakoutTimeService';
-import { PatternData } from '@/services/types/patternTypes';
-
-// Update interface to align with PatternData required fields
-interface BreakoutServicePattern extends Pick<PatternData, 'timeframe' | 'created_at' | 'status'> {
-  created_at: string;
-  timeframe: string;
-  status: 'active' | 'completed' | 'failed';
-}
+import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import { formatDistanceToNowStrict } from 'date-fns';
 
 interface PatternCardProps {
   pattern: {
@@ -47,13 +36,11 @@ interface PatternCardProps {
     ema_pattern?: string;
     status: string;
     risk_reward_ratio?: number;
-    direction?: 'bullish' | 'bearish';
   };
   avgCandlesToBreakout?: number;
-  onArchive?: (id: string) => void;
 }
 
-const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout, onArchive }) => {
+const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout }) => {
   // Format entry, target, and stop loss prices
   const formatPrice = (price: number) => {
     return price < 10 ? price.toFixed(3) : price.toFixed(2);
@@ -84,91 +71,60 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     return 'Low';
   };
   
-  // Determine if the pattern is bullish based on direction property or pattern_type
-  const isBullish = pattern.direction === 'bullish' ? true :
-                    pattern.direction === 'bearish' ? false :
-                    pattern.pattern_type.includes('Bull') || 
-                    pattern.pattern_type.includes('Cup') || 
-                    pattern.pattern_type.includes('Bottom') ||
-                    pattern.pattern_type.includes('Ascending');
+  // Determine if the pattern is bullish based on pattern_type
+  const isBullish = pattern.pattern_type.includes('Bull') || 
+                   pattern.pattern_type.includes('Cup') || 
+                   pattern.pattern_type.includes('Bottom') ||
+                   pattern.pattern_type.includes('Ascending');
   
-  // Only set direction if it's not already defined in the pattern
-  const direction = pattern.direction || (isBullish ? 'bullish' : 'bearish');
+  const direction = isBullish ? 'bullish' : 'bearish';
   
   // Format the time since creation
-  const timeAgo = formatDistanceToNow(new Date(pattern.created_at), { addSuffix: true });
+  const timeAgo = formatDistanceToNowStrict(new Date(pattern.created_at), { addSuffix: true });
   
-  // Format created date for display
-  const formattedCreatedDate = format(new Date(pattern.created_at), 'MMM d, yyyy h:mm a');
-  
-  // Get breakout time info using the new service
-  const breakoutInfo = useMemo(() => {
-    // Normalize status to lowercase for compatibility
-    const normalizedStatus = typeof pattern.status === 'string' 
-      ? pattern.status.toLowerCase() as 'active' | 'completed' | 'failed'
-      : 'active';
+  // Calculate expected breakout time based on average candles to breakout
+  const getExpectedBreakoutTime = () => {
+    if (!avgCandlesToBreakout) return 'N/A';
     
-    // Create a properly formatted object for BreakoutTimeService
-    const servicePattern = {
-      id: pattern.id,
-      symbol: pattern.symbol,
-      timeframe: pattern.timeframe,
-      pattern_type: pattern.pattern_type,
-      direction: pattern.direction || (isBullish ? 'bullish' : 'bearish') as 'bullish' | 'bearish',
-      entry_price: pattern.entry_price,
-      target_price: pattern.target_price,
-      stop_loss: pattern.stop_loss,
-      confidence_score: pattern.confidence_score,
-      created_at: pattern.created_at,
-      status: normalizedStatus
-    } as PatternData;
+    const createdAt = new Date(pattern.created_at);
+    let timeframeInMinutes = 0;
     
-    return BreakoutTimeService.getBreakoutTimeInfo(
-      servicePattern, 
-      avgCandlesToBreakout
-    );
-  }, [pattern, avgCandlesToBreakout, isBullish]);
-
-  // Generate status label and color based on pattern status and breakout timing
-  const getStatusInfo = () => {
-    // If the pattern has a completed or invalid status, use that
-    if (pattern.status === 'Completed' || pattern.status === 'Invalid') {
-      return {
-        label: pattern.status,
-        color: pattern.status === 'Completed' ? 'text.primary' : 'error.main'
-      };
+    // Convert timeframe to minutes
+    switch (pattern.timeframe) {
+      case '1m':
+        timeframeInMinutes = 1;
+        break;
+      case '5m':
+        timeframeInMinutes = 5;
+        break;
+      case '15m':
+        timeframeInMinutes = 15;
+        break;
+      case '30m':
+        timeframeInMinutes = 30;
+        break;
+      case '1h':
+        timeframeInMinutes = 60;
+        break;
+      case '4h':
+        timeframeInMinutes = 240;
+        break;
+      case '1d':
+        timeframeInMinutes = 1440;
+        break;
+      case '1w':
+        timeframeInMinutes = 10080;
+        break;
+      default:
+        timeframeInMinutes = 60;
     }
     
-    // Check if breakout date is in the past
-    if (breakoutInfo.hoursPast > 0) {
-      // If pattern is stale
-      if (breakoutInfo.isStale) {
-        return {
-          label: 'Expired',
-          color: 'error.main'
-        };
-      }
-      
-      // If pattern is past expected breakout but not stale yet
-      return {
-        label: 'Delayed',
-        color: 'warning.main'
-      };
-    }
+    // Calculate expected breakout time
+    const expectedBreakoutTime = new Date(createdAt.getTime() + (avgCandlesToBreakout * timeframeInMinutes * 60 * 1000));
     
-    // If the pattern is active and breakout time is in the future
-    return {
-      label: pattern.status,
-      color: pattern.status === 'Active' ? 'success.main' : 
-             pattern.status === 'Pending' ? 'info.main' : 'text.primary'
-    };
+    // Format date for display
+    return expectedBreakoutTime.toLocaleString();
   };
-
-  const statusInfo = getStatusInfo();
-  
-  // Calculate days old
-  const daysOld = differenceInDays(new Date(), new Date(pattern.created_at));
-  const isOld = daysOld > 7; // Consider patterns older than 7 days as "old"
 
   return (
     <Card 
@@ -177,217 +133,274 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         height: '100%', 
         display: 'flex', 
         flexDirection: 'column',
-        borderTop: '4px solid',
-        borderColor: isBullish ? 'success.main' : 'error.main',
-        transition: 'transform 0.2s',
-        opacity: breakoutInfo.isStale || isOld ? 0.8 : 1,
+        borderRadius: 3,
+        position: 'relative',
+        overflow: 'visible',
+        transition: 'transform 0.3s ease, box-shadow 0.3s ease',
+        borderTop: `4px solid ${isBullish ? 'success.main' : 'error.main'}`,
         '&:hover': {
-          transform: 'translateY(-4px)',
-          boxShadow: 6
+          transform: 'translateY(-8px)',
+          boxShadow: '0 16px 30px rgba(0, 0, 0, 0.1), 0 6px 12px rgba(0, 0, 0, 0.05)',
         }
       }}
     >
-      <CardContent sx={{ flexGrow: 1, padding: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-          <Typography variant="h6" component="div" fontWeight="bold">
-            {pattern.symbol}
-          </Typography>
-          <Box display="flex" alignItems="center">
+      <CardContent sx={{ flexGrow: 1, p: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center' }}>
+            <Typography variant="h5" component="div" sx={{ fontWeight: 'bold', mr: 1 }}>
+              {pattern.symbol}
+            </Typography>
             <Chip 
-              icon={direction === 'bullish' ? <TrendingUpIcon /> : <TrendingDownIcon />}
-              label={direction === 'bullish' ? 'Bullish' : 'Bearish'}
-              color={direction === 'bullish' ? 'success' : 'error'}
+              icon={isBullish ? <TrendingUpIcon /> : <TrendingDownIcon />}
+              label={isBullish ? 'Bullish' : 'Bearish'}
+              color={isBullish ? 'success' : 'error'}
               size="small"
-              sx={{ fontWeight: 'bold', mr: breakoutInfo.isStale || isOld ? 1 : 0 }}
+              sx={{
+                fontWeight: 'bold',
+                borderRadius: 1.5,
+                boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
+              }}
             />
-            {(breakoutInfo.isStale || isOld) && (
-              <Tooltip title={isOld ? "Pattern is over 7 days old" : "Past expected breakout time"}>
-                <WarningIcon color="warning" fontSize="small" />
-              </Tooltip>
-            )}
           </Box>
+          <Chip 
+            label={pattern.timeframe}
+            color="primary"
+            size="small"
+            variant="outlined"
+            sx={{ borderRadius: 1, fontWeight: 'medium' }}
+          />
         </Box>
         
-        <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-          {pattern.pattern_type} ({pattern.timeframe})
+        <Typography 
+          variant="subtitle2" 
+          color="text.secondary" 
+          gutterBottom
+          sx={{ 
+            display: 'flex', 
+            alignItems: 'center',
+            background: theme => alpha(theme.palette.primary.main, 0.08),
+            py: 0.5,
+            px: 1,
+            borderRadius: 1,
+            mb: 2
+          }}
+        >
+          <BarChartIcon sx={{ fontSize: 16, mr: 0.5 }} />
+          {pattern.pattern_type}
         </Typography>
         
-        <Divider sx={{ my: 1.5 }} />
+        <Divider sx={{ my: 2 }} />
         
-        <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-          <Box sx={{ width: '33%' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+        <Grid container spacing={2} sx={{ mb: 2 }}>
+          <Grid size={4}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
               Detected
             </Typography>
-            <Typography variant="body2">
+            <Typography variant="body2" fontWeight="bold">
               {timeAgo}
             </Typography>
-          </Box>
-          <Box sx={{ width: '33%' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+          </Grid>
+          <Grid size={4}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
               Confidence
             </Typography>
-            <Typography variant="body2" sx={{ color: getConfidenceColor(pattern.confidence_score) }}>
-              {pattern.confidence_score}% ({getConfidenceText(pattern.confidence_score)})
-            </Typography>
-          </Box>
-          <Box sx={{ width: '33%' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-              Status
-            </Typography>
-            <Typography variant="body2" sx={{ color: statusInfo.color }}>
-              {statusInfo.label}
-            </Typography>
-          </Box>
-        </Stack>
-        
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, p: 1, bgcolor: 'background.paper', borderRadius: 1 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-              Entry
-            </Typography>
-            <Typography variant="body2" fontWeight="bold">
-              ${formatPrice(pattern.entry_price)}
-            </Typography>
-          </Box>
-          <Box textAlign="center">
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-              Risk/Reward
-            </Typography>
-            <Typography variant="body2" fontWeight="bold">
-              {formatRiskReward(pattern.risk_reward_ratio)}
-            </Typography>
-          </Box>
-          <Box textAlign="right">
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-              Target
-            </Typography>
-            <Typography variant="body2" fontWeight="bold" color="success.main">
-              ${formatPrice(pattern.target_price)}
-            </Typography>
-          </Box>
-        </Box>
-        
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-              Stop Loss
-            </Typography>
-            <Typography variant="body1" fontWeight="bold" color="error.main">
-              ${pattern.stop_loss ? formatPrice(pattern.stop_loss) : 'N/A'}
-            </Typography>
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-              Channel Type
-            </Typography>
-            <Typography variant="body1" fontWeight="bold">
-              {pattern.channel_type || 'N/A'}
-            </Typography>
-          </Box>
-        </Box>
-        
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-              Profit %
-            </Typography>
-            <Typography variant="body2" color="success.main">
-              +{potentialProfit.toFixed(1)}%
-            </Typography>
-          </Box>
-        </Box>
-        
-        {pattern.volume_confirmation && (
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-            <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
-            <Typography variant="body2" color="success.main">
-              Volume Confirmation
-            </Typography>
-          </Box>
-        )}
-        
-        {pattern.trendline_break && (
-          <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-            <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 0.5 }} />
-            <Typography variant="body2" color="success.main">
-              Trendline Break
-            </Typography>
-          </Box>
-        )}
-        
-        {avgCandlesToBreakout && (
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            p: 1, 
-            mb: 1, 
-            bgcolor: breakoutInfo.isStale ? 'error.lightest' : 
-                     breakoutInfo.hoursPast > 0 ? 'warning.lightest' : 'info.lightest', 
-            borderRadius: 1,
-            border: 1,
-            borderColor: breakoutInfo.isStale ? 'error.light' : 
-                         breakoutInfo.hoursPast > 0 ? 'warning.light' : 'info.light'
-          }}>
-            <AccessTimeIcon 
-              color={breakoutInfo.isStale ? "error" : breakoutInfo.hoursPast > 0 ? "warning" : "info"} 
-              fontSize="small" 
-              sx={{ mr: 0.5 }} 
-            />
-            <Box>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-                Expected Breakout
-              </Typography>
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 0.5, 
+              borderRadius: 1,
+              background: theme => alpha(getConfidenceColor(pattern.confidence_score), 0.1)
+            }}>
               <Typography 
                 variant="body2" 
-                color={breakoutInfo.isStale ? "error" : breakoutInfo.hoursPast > 0 ? "warning.main" : "info.main"}
+                fontWeight="bold" 
+                sx={{ color: getConfidenceColor(pattern.confidence_score) }}
               >
-                {format(breakoutInfo.expectedBreakoutTime, 'MMM d, yyyy h:mm a')}
-                <br />
-                {BreakoutTimeService.getBreakoutDescription(breakoutInfo)}
+                {pattern.confidence_score}% 
+                <Typography 
+                  component="span" 
+                  variant="caption" 
+                  sx={{ ml: 0.5, color: 'inherit', opacity: 0.8 }}
+                >
+                  ({getConfidenceText(pattern.confidence_score)})
+                </Typography>
               </Typography>
             </Box>
-          </Box>
-        )}
+          </Grid>
+          <Grid size={4}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              Status
+            </Typography>
+            <Chip
+              label={pattern.status}
+              size="small"
+              color={pattern.status === 'Active' ? 'success' : pattern.status === 'Completed' ? 'primary' : 'default'}
+              sx={{ fontWeight: 'medium', fontSize: '0.75rem', height: 24 }}
+            />
+          </Grid>
+        </Grid>
         
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 1.5 }}>
-          Created: {formattedCreatedDate}
+        <Box sx={{ 
+          p: 2, 
+          borderRadius: 2, 
+          mb: 2, 
+          background: theme => alpha(theme.palette.background.default, 0.6) 
+        }}>
+          <Grid container spacing={2} sx={{ mb: 1 }}>
+            <Grid size={6}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Entry
+              </Typography>
+              <Typography variant="body1" fontWeight="bold">
+                ${formatPrice(pattern.entry_price)}
+              </Typography>
+            </Grid>
+            <Grid size={6}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Target
+              </Typography>
+              <Typography variant="body1" fontWeight="bold" color="success.main">
+                ${formatPrice(pattern.target_price)} 
+                <Typography 
+                  component="span" 
+                  variant="caption" 
+                  color="success.main" 
+                  sx={{ ml: 0.5, fontWeight: 'medium' }}
+                >
+                  (+{potentialProfit.toFixed(1)}%)
+                </Typography>
+              </Typography>
+            </Grid>
+          </Grid>
+          
+          <Grid container spacing={2}>
+            <Grid size={6}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Stop Loss
+              </Typography>
+              <Typography variant="body1" fontWeight="bold" color="error.main">
+                ${pattern.stop_loss ? formatPrice(pattern.stop_loss) : 'N/A'}
+              </Typography>
+            </Grid>
+            <Grid size={6}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                Channel Type
+              </Typography>
+              <Typography variant="body1" fontWeight="bold">
+                {pattern.channel_type || 'N/A'}
+              </Typography>
+            </Grid>
+          </Grid>
+        </Box>
+        
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center',
+          mb: 2,
+          p: 1,
+          borderRadius: 1,
+          border: '1px dashed',
+          borderColor: 'divider'
+        }}>
+          <Typography variant="caption" color="text.secondary">
+            Risk/Reward
+          </Typography>
+          <Typography variant="body2" fontWeight="bold" color="primary.main">
+            {formatRiskReward(pattern.risk_reward_ratio)}
+          </Typography>
+        </Box>
+        
+        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+          {pattern.volume_confirmation && (
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 0.75, 
+              borderRadius: 1,
+              background: theme => alpha(theme.palette.success.main, 0.1)
+            }}>
+              <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 1 }} />
+              <Typography variant="body2" color="success.main" fontWeight="medium">
+                Volume Confirmation
+              </Typography>
+            </Box>
+          )}
+          
+          {pattern.trendline_break && (
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 0.75, 
+              borderRadius: 1,
+              background: theme => alpha(theme.palette.success.main, 0.1)
+            }}>
+              <CheckCircleIcon color="success" fontSize="small" sx={{ mr: 1 }} />
+              <Typography variant="body2" color="success.main" fontWeight="medium">
+                Trendline Break
+              </Typography>
+            </Box>
+          )}
+          
+          {avgCandlesToBreakout && (
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              p: 0.75, 
+              borderRadius: 1,
+              background: theme => alpha(theme.palette.info.main, 0.1)
+            }}>
+              <AccessTimeIcon color="info" fontSize="small" sx={{ mr: 1 }} />
+              <Typography variant="body2" color="info.main" fontWeight="medium">
+                Expected Breakout: {getExpectedBreakoutTime()}
+              </Typography>
+            </Box>
+          )}
+        </Box>
+        
+        <Typography 
+          variant="caption" 
+          color="text.secondary" 
+          sx={{ 
+            display: 'block', 
+            mt: 2, 
+            textAlign: 'right', 
+            fontStyle: 'italic', 
+            opacity: 0.7 
+          }}
+        >
+          Created: {new Date(pattern.created_at).toLocaleString()}
         </Typography>
       </CardContent>
       
-      <CardActions sx={{ padding: '8px 16px 16px 16px', justifyContent: 'space-between' }}>
+      <CardActions sx={{ p: 2, pt: 0 }}>
         <Button 
           size="small" 
           color="primary" 
-          variant="contained" 
-          sx={{ flex: 1, mr: 1 }}
+          variant="outlined"
+          sx={{ 
+            borderRadius: 2,
+            flex: 1,
+            mr: 1
+          }}
         >
           View Chart
         </Button>
-        {(breakoutInfo.isStale || isOld) ? (
-          <Button 
-            size="small" 
-            color="warning" 
-            variant="outlined"
-            sx={{ flex: 1 }}
-            onClick={() => onArchive && onArchive(pattern.id)}
-            startIcon={<ArchiveIcon />}
-          >
-            Archive
-          </Button>
-        ) : (
-          <Button 
-            size="small" 
-            color="secondary" 
-            variant="outlined"
-            sx={{ flex: 1 }}
-          >
-            Backtest
-          </Button>
-        )}
+        <Button 
+          size="small" 
+          color="secondary" 
+          variant="contained"
+          endIcon={<ArrowForwardIcon />}
+          sx={{ 
+            borderRadius: 2,
+            flex: 1
+          }}
+        >
+          Backtest
+        </Button>
       </CardActions>
     </Card>
   );
 };
 
-export default PatternCard;
+export default PatternCard; 

@@ -52,6 +52,14 @@ import SignalWifiStatusbar4BarIcon from '@mui/icons-material/SignalWifiStatusbar
 import SignalWifiStatusbarConnectedNoInternet4Icon from '@mui/icons-material/SignalWifiStatusbarConnectedNoInternet4';
 import SignalWifiStatusbarNullIcon from '@mui/icons-material/SignalWifiStatusbarNull';
 import AddIcon from '@mui/icons-material/Add';
+import MarketDataService, { DataFreshnessStatus, DataMetadata } from '@/services/api/marketData/dataService';
+import configService from '@/utils/configService';
+import ErrorIcon from '@mui/icons-material/Error';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CachedIcon from '@mui/icons-material/Cached';
+import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
+import type { PatternData } from '../../services/types/patternTypes';
+import type { PatternFilter } from './filters/types';
 
 // Define the tab panel interface
 interface TabPanelProps {
@@ -60,32 +68,14 @@ interface TabPanelProps {
   value: number;
 }
 
-// Define adapter interface for PatternCard props
-interface PatternData {
-  id: string;
-  symbol: string;
-  pattern_type: string;
-  timeframe: string;
-  entry_price: number;
-  target_price: number;
-  stop_loss?: number;
-  confidence_score: number;
-  created_at: string;
-  channel_type?: string;
-  volume_confirmation?: boolean;
-  trendline_break?: boolean;
-  ema_pattern?: string;
-  direction?: 'bullish' | 'bearish';
-  status?: 'active' | 'archived' | 'completed';
-  risk_reward_ratio?: number;
-}
-
+// Define BreakoutData interface extending PatternData for any additional properties
 interface BreakoutData extends PatternData {
-  breakout_confirmed: boolean;
+  breakout_confirmed?: boolean;
   breakout_time?: string;
   actual_breakout_price?: number;
 }
 
+// Only keep PatternCardData interface which adapts the imported PatternData
 interface PatternCardData {
   id: string;
   symbol: string;
@@ -93,15 +83,16 @@ interface PatternCardData {
   timeframe: string;
   entry_price: number;
   target_price: number;
-  stop_loss?: number;
+  stop_loss: number;
   confidence_score: number;
   created_at: string;
+  direction: 'bullish' | 'bearish';
+  status: 'active' | 'completed' | 'failed';
+  risk_reward_ratio: number;
   channel_type?: string;
   volume_confirmation?: boolean;
   trendline_break?: boolean;
-  ema_pattern?: boolean;
-  risk_reward_ratio?: number;
-  status?: 'active' | 'archived' | 'completed';
+  ema_pattern?: string;
 }
 
 // Define filter preset interface
@@ -226,6 +217,26 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
     [...swingTradingResults, ...localSwingPatterns] as PatternData[],
     [swingTradingResults, localSwingPatterns]
   );
+  
+  // State for real-time data updates
+  const [useRealData, setUseRealData] = useState<boolean>(false);
+  const [dataStatus, setDataStatus] = useState<{
+    status: DataFreshnessStatus,
+    message: string,
+    details: {
+      age: string,
+      source: string,
+      fetchTime: string,
+      marketStatus: string
+    }
+  } | null>(null);
+  
+  // Initialize market data service
+  const marketDataService = useMemo(() => new MarketDataService(), []);
+  
+  // Add test symbols for testing real data
+  const dayTradingSymbols = useMemo(() => ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META'], []);
+  const swingTradingSymbols = useMemo(() => ['SPY', 'QQQ', 'NVDA', 'TSLA', 'AMD'], []);
   
   // Get current scanner mode
   const getCurrentScannerMode = () => {
@@ -663,58 +674,79 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
     }, delay);
   }, [realtimeEnabled, handlePatternUpdate]);
   
-  // Modify generateMockPattern to trigger simulated updates
+  // Function to show notification
+  const showNotification = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    console.log(`[${type.toUpperCase()}] ${message}`);
+    // You could implement a custom notification UI here if needed
+  }, []);
+  
+  // Update generateMockPattern to create a valid PatternData object
   const generateMockPattern = useCallback(() => {
-    // Only generate patterns if real-time is enabled
     if (!realtimeEnabled) {
-      setSnackbarMessage('Enable real-time updates to generate demo patterns');
-      setSnackbarOpen(true);
       return;
     }
+
+    const symbols = ['AAPL', 'TSLA', 'AMZN', 'MSFT', 'GOOGL', 'META', 'NFLX', 'NVDA', 'AMD', 'INTC'];
+    const patternTypes = ['Bull Flag', 'Cup & Handle', 'Ascending Triangle', 'Descending Triangle', 'Double Bottom', 'Head & Shoulders'];
+    const timeframes = ['1min', '5min', '15min', '30min', '1h', '4h', 'Daily'];
+    const directions = ['bullish', 'bearish'] as const;
+    const channelTypes = ['horizontal', 'ascending', 'descending'] as const;
+
+    const currentSymbol = symbols[Math.floor(Math.random() * symbols.length)];
+    const currentPattern = patternTypes[Math.floor(Math.random() * patternTypes.length)];
+    const currentTimeframe = timeframes[Math.floor(Math.random() * timeframes.length)];
+    const direction = directions[Math.floor(Math.random() * directions.length)];
+    const confidence = Math.floor(Math.random() * 50) + 50; // 50-100
+    const entryPrice = Math.round((Math.random() * 200 + 50) * 100) / 100; // 50-250 with 2 decimal places
+    const targetPricePercent = Math.round((Math.random() * 10 + 2) * 100) / 100; // 2-12% with 2 decimal places
+    const stopLossPercent = Math.round((Math.random() * 3 + 1) * 100) / 100; // 1-4% with 2 decimal places
     
-    // Random values for the pattern
-    const symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'AMD'];
-    const patternTypes = ['Bull Flag', 'Bear Flag', 'Ascending Triangle', 'Descending Triangle'];
-    const timeframes = activeTab === 0 ? ['15m', '30m', '1h'] : ['4h', '1d'];
-    const channelTypes = ['horizontal', 'ascending', 'descending'];
+    const targetPrice = direction === 'bullish' 
+      ? Math.round((entryPrice * (1 + targetPricePercent / 100)) * 100) / 100 
+      : Math.round((entryPrice * (1 - targetPricePercent / 100)) * 100) / 100;
     
-    // Generate random pattern
+    const stopLoss = direction === 'bullish' 
+      ? Math.round((entryPrice * (1 - stopLossPercent / 100)) * 100) / 100 
+      : Math.round((entryPrice * (1 + stopLossPercent / 100)) * 100) / 100;
+    
+    const riskRewardRatio = targetPricePercent / stopLossPercent;
+
+    const now = new Date();
+    // Create a new pattern with all required fields
     const mockPattern: PatternData = {
       id: `mock-${Date.now()}`,
-      symbol: symbols[Math.floor(Math.random() * symbols.length)],
-      pattern_type: patternTypes[Math.floor(Math.random() * patternTypes.length)],
-      timeframe: timeframes[Math.floor(Math.random() * timeframes.length)],
-      entry_price: 100 + Math.random() * 200,
-      target_price: 120 + Math.random() * 200,
-      stop_loss: 90 + Math.random() * 180,
-      confidence_score: 60 + Math.floor(Math.random() * 40),
-      created_at: new Date().toISOString(),
-      channel_type: channelTypes[Math.floor(Math.random() * channelTypes.length)],
+      symbol: currentSymbol,
+      pattern_type: currentPattern,
+      timeframe: currentTimeframe,
+      entry_price: entryPrice,
+      target_price: targetPrice,
+      stop_loss: stopLoss, // Required field
+      confidence_score: confidence,
+      created_at: now.toISOString(),
+      direction: direction,
+      status: 'active',
+      risk_reward_ratio: parseFloat(riskRewardRatio.toFixed(2)),
+      channel_type: Math.random() > 0.6 ? channelTypes[Math.floor(Math.random() * channelTypes.length)] : undefined,
       volume_confirmation: Math.random() > 0.5,
       trendline_break: Math.random() > 0.5,
-      ema_pattern: Math.random() > 0.7 ? 'Golden Cross' : undefined,
-      direction: Math.random() > 0.5 ? 'bullish' : 'bearish',
-      status: 'active',
-      risk_reward_ratio: 1 + Math.random() * 3
+      ema_pattern: Math.random() > 0.7 ? 'EMA9 cross EMA20' : undefined,
+      detected_at: now.toISOString()
     };
-    
-    // Create an event
+
+    // Trigger the mock pattern update simulation
     const mockEvent: NewPatternEvent = {
       type: PatternUpdateEventType.NEW_PATTERN,
       payload: mockPattern,
-      timestamp: Date.now()
+      timestamp: now.getTime()
     };
-    
-    // Process the mock event
+
     handleNewPattern(mockEvent);
-    
-    // Schedule simulated updates
     simulatePatternUpdate(mockPattern);
-    
-    // Show notification
-    setSnackbarMessage(`Demo pattern for ${mockPattern.symbol} generated`);
-    setSnackbarOpen(true);
-  }, [activeTab, realtimeEnabled, handleNewPattern, simulatePatternUpdate]);
+
+    // Show notification for generated pattern
+    showNotification(`Generated demo pattern for ${mockPattern.symbol} (${mockPattern.pattern_type})`, 'success');
+
+  }, [realtimeEnabled, handleNewPattern, simulatePatternUpdate, showNotification]);
   
   // Add an effect to handle toggling real-time updates
   useEffect(() => {
@@ -728,6 +760,142 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
       });
     }
   }, [realtimeEnabled, localDayPatterns, localSwingPatterns, simulatePatternUpdate]);
+  
+  // Function to fetch real market data
+  const fetchMarketData = useCallback(async (symbols: string[], timeframe: string) => {
+    if (!useRealData) return;
+    
+    try {
+      // Show loading state
+      setSnackbarMessage(`Fetching ${timeframe} data for ${symbols.join(', ')}...`);
+      setSnackbarOpen(true);
+      
+      // Fetch candles for symbols
+      const result = await marketDataService.scanMultipleSymbols(
+        symbols,
+        timeframe,
+        120, // Last 120 candles
+        undefined,
+        undefined,
+        false // Use cache if available
+      );
+      
+      // Update data status
+      setDataStatus(marketDataService.getDataFreshnessStatus(result.scanMetadata));
+      
+      // Process the data to find patterns
+      // This is a simplified implementation - in a real app, you'd use your pattern detection logic
+      const patterns: PatternData[] = [];
+      
+      for (const symbol of symbols) {
+        if (result.data[symbol] && result.data[symbol].length > 0) {
+          const candles = result.data[symbol];
+          const lastCandle = candles[candles.length - 1];
+          
+          // Simple "pattern" creation based on latest price
+          // In a real app, you'd analyze the candles to detect actual patterns
+          patterns.push({
+            id: `${symbol}-${Date.now()}`,
+            symbol: symbol,
+            pattern_type: lastCandle.close > lastCandle.open ? 'Bull Flag' : 'Bear Flag',
+            timeframe: timeframe,
+            entry_price: lastCandle.close,
+            target_price: lastCandle.close * 1.02, // 2% target
+            stop_loss: lastCandle.close * 0.98, // 2% stop loss
+            confidence_score: 70 + Math.floor(Math.random() * 20),
+            created_at: new Date().toISOString(),
+            direction: lastCandle.close > lastCandle.open ? 'bullish' : 'bearish',
+            status: 'active',
+            risk_reward_ratio: 1,
+            detected_at: new Date().toISOString()
+          });
+        }
+      }
+      
+      // Update local patterns based on active tab
+      if (activeTab === 0) {
+        setLocalDayPatterns(patterns.concat(localDayPatterns));
+      } else {
+        setLocalSwingPatterns(patterns.concat(localSwingPatterns));
+      }
+      
+      // Show success message
+      setSnackbarMessage(`Loaded ${patterns.length} patterns from real market data`);
+      setSnackbarOpen(true);
+    } catch (error) {
+      console.error('Error fetching market data:', error);
+      setSnackbarMessage('Error fetching market data. Check console for details.');
+      setSnackbarOpen(true);
+    }
+  }, [useRealData, activeTab, marketDataService]);
+  
+  // Toggle real data usage
+  const handleToggleRealData = useCallback(() => {
+    const newValue = !useRealData;
+    setUseRealData(newValue);
+    
+    if (newValue) {
+      // When enabling real data, fetch immediately
+      const symbols = activeTab === 0 ? dayTradingSymbols : swingTradingSymbols;
+      fetchMarketData(symbols, selectedTimeframe);
+    }
+  }, [useRealData, activeTab, dayTradingSymbols, swingTradingSymbols, selectedTimeframe, fetchMarketData]);
+  
+  // Function to get icon for data freshness status
+  const getDataStatusIcon = useCallback(() => {
+    if (!dataStatus) return <SignalWifiStatusbarNullIcon color="disabled" />;
+    
+    switch (dataStatus.status) {
+      case 'real-time':
+        return <FiberManualRecordIcon color="success" />;
+      case 'delayed':
+        return <AccessTimeIcon color="warning" />;
+      case 'cached':
+        return <CachedIcon color="info" />;
+      case 'stale':
+        return <CachedIcon color="warning" />;
+      case 'error':
+        return <ErrorIcon color="error" />;
+      default:
+        return <SignalWifiStatusbarNullIcon color="disabled" />;
+    }
+  }, [dataStatus]);
+  
+  // Function to check if Polygon.io API key is configured
+  const isPolygonApiConfigured = useMemo(() => {
+    const apiKey = configService.getConfig().polygonApiKey;
+    return apiKey && apiKey !== 'your_polygon_api_key_here';
+  }, []);
+  
+  // Update real data when timeframe changes
+  useEffect(() => {
+    if (useRealData) {
+      const symbols = activeTab === 0 ? dayTradingSymbols : swingTradingSymbols;
+      fetchMarketData(symbols, selectedTimeframe);
+    }
+  }, [useRealData, selectedTimeframe, activeTab, dayTradingSymbols, swingTradingSymbols, fetchMarketData]);
+  
+  // Test Polygon.io connection when real data is first enabled
+  useEffect(() => {
+    if (useRealData && isPolygonApiConfigured) {
+      const testConnection = async () => {
+        try {
+          const result = await marketDataService.testConnection();
+          if (result.success) {
+            setSnackbarMessage(`Connected to Polygon.io API: ${result.message}`);
+          } else {
+            setSnackbarMessage(`Connection test failed: ${result.message}`);
+          }
+          setSnackbarOpen(true);
+        } catch (error) {
+          setSnackbarMessage('Error testing connection to Polygon.io');
+          setSnackbarOpen(true);
+        }
+      };
+      
+      testConnection();
+    }
+  }, [useRealData, marketDataService, isPolygonApiConfigured]);
   
   return (
     <Box sx={{ width: '100%' }}>
@@ -776,6 +944,28 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
             </IconButton>
           </Tooltip>
           
+          {/* Add data status indicator */}
+          {dataStatus && (
+            <Tooltip title={dataStatus.message}>
+              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                {getDataStatusIcon()}
+              </Box>
+            </Tooltip>
+          )}
+          
+          {/* Add real data toggle */}
+          <Tooltip title={`Real market data: ${useRealData ? 'On' : 'Off'}`}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Switch
+                checked={useRealData}
+                onChange={handleToggleRealData}
+                color="secondary"
+                size="small"
+                disabled={!isPolygonApiConfigured}
+              />
+            </Box>
+          </Tooltip>
+          
           <Tooltip title={`Real-time updates: ${realtimeEnabled ? 'On' : 'Off'}`}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               {getConnectionStatusIcon()}
@@ -789,6 +979,13 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
           </Tooltip>
         </Box>
       </Paper>
+      
+      {/* Add API key warning if not configured */}
+      {!isPolygonApiConfigured && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Polygon.io API key is not configured. Please add your API key to the .env file to enable real market data.
+        </Alert>
+      )}
       
       {/* Notifications panel */}
       <Popover
