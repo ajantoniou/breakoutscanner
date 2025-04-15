@@ -11,6 +11,7 @@ export interface PatternData {
   entry_price: number;
   target_price: number;
   stop_loss: number;
+  risk_reward_ratio: number;
   confidence_score: number;
   created_at: string;
   updated_at?: string;

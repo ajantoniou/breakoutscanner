@@ -21,10 +21,11 @@ import ArchiveIcon from '@mui/icons-material/Archive';
 import { format, differenceInHours, differenceInDays } from 'date-fns';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 import { BreakoutTimeService } from '@/services/pattern/breakoutTimeService';
+import { PatternData } from '@/services/types/patternTypes';
 
-// Add this interface to properly map between component and service
-interface BreakoutServicePattern {
-  createdAt: string;
+// Update interface to align with PatternData required fields
+interface BreakoutServicePattern extends Pick<PatternData, 'timeframe' | 'created_at' | 'status'> {
+  created_at: string;
   timeframe: string;
   status: 'active' | 'completed' | 'failed';
 }
@@ -108,17 +109,25 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
       : 'active';
     
     // Create a properly formatted object for BreakoutTimeService
-    const servicePattern: BreakoutServicePattern = {
-      createdAt: pattern.created_at,
+    const servicePattern = {
+      id: pattern.id,
+      symbol: pattern.symbol,
       timeframe: pattern.timeframe,
+      pattern_type: pattern.pattern_type,
+      direction: pattern.direction || (isBullish ? 'bullish' : 'bearish') as 'bullish' | 'bearish',
+      entry_price: pattern.entry_price,
+      target_price: pattern.target_price,
+      stop_loss: pattern.stop_loss,
+      confidence_score: pattern.confidence_score,
+      created_at: pattern.created_at,
       status: normalizedStatus
-    };
+    } as PatternData;
     
     return BreakoutTimeService.getBreakoutTimeInfo(
       servicePattern, 
       avgCandlesToBreakout
     );
-  }, [pattern, avgCandlesToBreakout]);
+  }, [pattern, avgCandlesToBreakout, isBullish]);
 
   // Generate status label and color based on pattern status and breakout timing
   const getStatusInfo = () => {

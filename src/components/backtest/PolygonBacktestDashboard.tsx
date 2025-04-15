@@ -1,19 +1,360 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { stockRecommendationService } from '@/services/api/stockRecommendationService';
-import { backtestPatternsWithYahoo, getBacktestStatistics } from '@/services/backtesting/yahooBacktestService';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Button, FormControl, InputLabel, MenuItem, Select, CircularProgress, Snackbar, Alert, Typography, Box, Stack, Chip, Paper, ButtonGroup, Tooltip } from '@mui/material';
 import { PatternData } from '@/services/types/patternTypes';
 import { BacktestResult } from '@/services/types/backtestTypes';
-import { Button, FormControl, InputLabel, MenuItem, Select, CircularProgress, Snackbar, Alert, Typography, Box, Stack, Chip, Paper, ButtonGroup, Tooltip } from '@mui/material';
+import { backtestPatternsWithPolygon, getBacktestStatistics } from '@/services/backtesting/polygonBacktestService';
+import { stockRecommendationService } from '@/services/api/stockRecommendationService';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import TableChartIcon from '@mui/icons-material/TableChart';
 
+// Add visualization components
+const PatternPerformanceChart: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
+  // Calculate performance metrics by pattern type
+  const patternMetrics = useMemo(() => {
+    const metrics: Record<string, { total: number, wins: number, winRate: number, avgReturn: number }> = {};
+    
+    // Group results by pattern type and calculate metrics
+    backtestResults.forEach(result => {
+      const patternType = result.patternType;
+      
+      if (!metrics[patternType]) {
+        metrics[patternType] = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
+      }
+      
+      metrics[patternType].total += 1;
+      if (result.successful) {
+        metrics[patternType].wins += 1;
+      }
+      metrics[patternType].avgReturn += result.profitLossPercent;
+    });
+    
+    // Calculate win rates and average returns
+    Object.keys(metrics).forEach(pattern => {
+      metrics[pattern].winRate = (metrics[pattern].wins / metrics[pattern].total) * 100;
+      metrics[pattern].avgReturn = metrics[pattern].avgReturn / metrics[pattern].total;
+    });
+    
+    return metrics;
+  }, [backtestResults]);
+  
+  // Skip rendering if no data
+  if (backtestResults.length === 0 || Object.keys(patternMetrics).length === 0) {
+    return null;
+  }
+
+  // Sort pattern types by win rate for better visualization
+  const sortedPatterns = Object.keys(patternMetrics).sort(
+    (a, b) => patternMetrics[b].winRate - patternMetrics[a].winRate
+  );
+  
+  return (
+    <Paper className="p-4 mt-6 mb-6">
+      <Typography variant="h6" gutterBottom>Pattern Performance Analysis</Typography>
+      
+      <div className="overflow-x-auto">
+        <div style={{ minWidth: '600px' }}>
+          {sortedPatterns.map(pattern => (
+            <div key={pattern} className="mb-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-medium w-48 truncate">{pattern}</span>
+                <span className="text-sm text-gray-600">
+                  {patternMetrics[pattern].wins}/{patternMetrics[pattern].total} trades
+                </span>
+                <span className="font-medium w-20 text-right">
+                  {patternMetrics[pattern].winRate.toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4 relative">
+                <div 
+                  className={`h-4 rounded-full ${patternMetrics[pattern].avgReturn >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
+                  style={{ width: `${Math.min(Math.max(patternMetrics[pattern].winRate, 0), 100)}%` }}
+                ></div>
+                <div 
+                  className="absolute top-0 h-full"
+                  style={{ 
+                    left: '50%', 
+                    width: '2px', 
+                    backgroundColor: 'rgba(0,0,0,0.3)' 
+                  }}
+                ></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      
+      <div className="mt-4 text-sm text-gray-600">
+        <div className="flex items-center justify-between">
+          <span>Lower Win Rate</span>
+          <span>Higher Win Rate</span>
+        </div>
+        <div className="flex items-center justify-between mt-1">
+          <span>0%</span>
+          <span>50%</span>
+          <span>100%</span>
+        </div>
+      </div>
+    </Paper>
+  );
+};
+
+// Direction Distribution Chart
+const DirectionDistributionChart: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
+  // Calculate performance metrics by direction
+  const directionMetrics = useMemo(() => {
+    const bullish = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
+    const bearish = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
+    
+    // Group results by direction and calculate metrics
+    backtestResults.forEach(result => {
+      const direction = result.predictedDirection;
+      
+      if (direction === 'bullish') {
+        bullish.total += 1;
+        if (result.successful) {
+          bullish.wins += 1;
+        }
+        bullish.avgReturn += result.profitLossPercent;
+      } else if (direction === 'bearish') {
+        bearish.total += 1;
+        if (result.successful) {
+          bearish.wins += 1;
+        }
+        bearish.avgReturn += result.profitLossPercent;
+      }
+    });
+    
+    // Calculate win rates and average returns
+    if (bullish.total > 0) {
+      bullish.winRate = (bullish.wins / bullish.total) * 100;
+      bullish.avgReturn = bullish.avgReturn / bullish.total;
+    }
+    
+    if (bearish.total > 0) {
+      bearish.winRate = (bearish.wins / bearish.total) * 100;
+      bearish.avgReturn = bearish.avgReturn / bearish.total;
+    }
+    
+    return { bullish, bearish };
+  }, [backtestResults]);
+  
+  // Skip rendering if no data
+  if (backtestResults.length === 0) {
+    return null;
+  }
+
+  return (
+    <Paper className="p-4 mt-6 mb-6">
+      <Typography variant="h6" gutterBottom>Direction Performance</Typography>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Bullish Performance */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-medium">Bullish Patterns</span>
+            <span className="text-sm text-gray-600">
+              {directionMetrics.bullish.wins}/{directionMetrics.bullish.total} trades
+            </span>
+            <span className="font-medium">
+              {directionMetrics.bullish.winRate.toFixed(1)}%
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-6 relative">
+            <div 
+              className={`h-6 rounded-full ${directionMetrics.bullish.avgReturn >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
+              style={{ width: `${Math.min(Math.max(directionMetrics.bullish.winRate, 0), 100)}%` }}
+            >
+              <span className="text-white text-xs font-medium flex items-center justify-center h-full">
+                {directionMetrics.bullish.avgReturn.toFixed(2)}%
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        {/* Bearish Performance */}
+        <div>
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-medium">Bearish Patterns</span>
+            <span className="text-sm text-gray-600">
+              {directionMetrics.bearish.wins}/{directionMetrics.bearish.total} trades
+            </span>
+            <span className="font-medium">
+              {directionMetrics.bearish.winRate.toFixed(1)}%
+            </span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-6 relative">
+            <div 
+              className={`h-6 rounded-full ${directionMetrics.bearish.avgReturn >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
+              style={{ width: `${Math.min(Math.max(directionMetrics.bearish.winRate, 0), 100)}%` }}
+            >
+              <span className="text-white text-xs font-medium flex items-center justify-center h-full">
+                {directionMetrics.bearish.avgReturn.toFixed(2)}%
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Paper>
+  );
+};
+
+// Pattern Metrics Table
+const PatternMetricsTable: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
+  // Group results by pattern type
+  const patternMetrics = useMemo(() => {
+    const metrics: Record<string, {
+      totalTrades: number,
+      winningTrades: number,
+      losingTrades: number,
+      winRate: number,
+      avgProfitLoss: number,
+      avgWinAmount: number,
+      avgLossAmount: number,
+      maxWin: number,
+      maxLoss: number,
+      avgCandlesToBreakout: number,
+      profitFactor: number
+    }> = {};
+    
+    // Process each result to build metrics
+    backtestResults.forEach(result => {
+      const patternType = result.patternType;
+      
+      // Initialize pattern metrics if not exists
+      if (!metrics[patternType]) {
+        metrics[patternType] = {
+          totalTrades: 0,
+          winningTrades: 0,
+          losingTrades: 0,
+          winRate: 0,
+          avgProfitLoss: 0,
+          avgWinAmount: 0,
+          avgLossAmount: 0,
+          maxWin: 0,
+          maxLoss: 0,
+          avgCandlesToBreakout: 0,
+          profitFactor: 0
+        };
+      }
+      
+      // Update metrics
+      metrics[patternType].totalTrades += 1;
+      if (result.successful) {
+        metrics[patternType].winningTrades += 1;
+        metrics[patternType].avgWinAmount += result.profitLossPercent;
+        metrics[patternType].maxWin = Math.max(metrics[patternType].maxWin, result.profitLossPercent);
+      } else {
+        metrics[patternType].losingTrades += 1;
+        metrics[patternType].avgLossAmount += result.profitLossPercent;
+        metrics[patternType].maxLoss = Math.min(metrics[patternType].maxLoss, result.profitLossPercent);
+      }
+      
+      metrics[patternType].avgProfitLoss += result.profitLossPercent;
+      metrics[patternType].avgCandlesToBreakout += result.candlesToBreakout;
+    });
+    
+    // Calculate averages and ratios
+    Object.keys(metrics).forEach(pattern => {
+      const m = metrics[pattern];
+      
+      // Calculate win rate
+      m.winRate = (m.winningTrades / m.totalTrades) * 100;
+      
+      // Calculate averages
+      m.avgProfitLoss = m.avgProfitLoss / m.totalTrades;
+      m.avgCandlesToBreakout = m.avgCandlesToBreakout / m.totalTrades;
+      
+      // Calculate average win and loss amounts
+      if (m.winningTrades > 0) {
+        m.avgWinAmount = m.avgWinAmount / m.winningTrades;
+      }
+      
+      if (m.losingTrades > 0) {
+        m.avgLossAmount = m.avgLossAmount / m.losingTrades;
+      }
+      
+      // Calculate profit factor
+      const totalWins = m.avgWinAmount * m.winningTrades;
+      const totalLosses = Math.abs(m.avgLossAmount * m.losingTrades);
+      m.profitFactor = totalLosses !== 0 ? totalWins / totalLosses : m.winningTrades > 0 ? 999 : 0;
+    });
+    
+    return metrics;
+  }, [backtestResults]);
+  
+  // Sort pattern types by win rate
+  const sortedPatterns = useMemo(() => {
+    return Object.keys(patternMetrics).sort(
+      (a, b) => patternMetrics[b].winRate - patternMetrics[a].winRate
+    );
+  }, [patternMetrics]);
+  
+  if (backtestResults.length === 0) {
+    return null;
+  }
+  
+  return (
+    <Paper className="p-4 mt-6 mb-6">
+      <Typography variant="h6" gutterBottom>Pattern Type Performance Metrics</Typography>
+      
+      <div className="overflow-x-auto">
+        <table className="min-w-full">
+          <thead>
+            <tr className="bg-gray-100">
+              <th className="px-4 py-2 text-left">Pattern Type</th>
+              <th className="px-4 py-2 text-right">Trades</th>
+              <th className="px-4 py-2 text-right">Win Rate</th>
+              <th className="px-4 py-2 text-right">Avg P/L</th>
+              <th className="px-4 py-2 text-right">Avg Win</th>
+              <th className="px-4 py-2 text-right">Avg Loss</th>
+              <th className="px-4 py-2 text-right">Profit Factor</th>
+              <th className="px-4 py-2 text-right">Candles to BK</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedPatterns.map(pattern => (
+              <tr key={pattern} className="border-t">
+                <td className="px-4 py-2 font-medium">{pattern}</td>
+                <td className="px-4 py-2 text-right">{patternMetrics[pattern].totalTrades}</td>
+                <td className="px-4 py-2 text-right font-semibold" style={{ 
+                  color: patternMetrics[pattern].winRate >= 60 ? '#16a34a' : 
+                          patternMetrics[pattern].winRate >= 45 ? '#ca8a04' : '#dc2626' 
+                }}>
+                  {patternMetrics[pattern].winRate.toFixed(1)}%
+                </td>
+                <td className="px-4 py-2 text-right" style={{ 
+                  color: patternMetrics[pattern].avgProfitLoss >= 0 ? '#16a34a' : '#dc2626' 
+                }}>
+                  {patternMetrics[pattern].avgProfitLoss.toFixed(2)}%
+                </td>
+                <td className="px-4 py-2 text-right text-green-600">
+                  +{patternMetrics[pattern].avgWinAmount.toFixed(2)}%
+                </td>
+                <td className="px-4 py-2 text-right text-red-600">
+                  {patternMetrics[pattern].avgLossAmount.toFixed(2)}%
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {patternMetrics[pattern].profitFactor.toFixed(2)}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  {patternMetrics[pattern].avgCandlesToBreakout.toFixed(1)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Paper>
+  );
+};
+
 /**
- * Dashboard component for backtesting with Yahoo Finance data
+ * Dashboard component for backtesting with Polygon.io data
  */
-const YahooBacktestDashboard: React.FC = () => {
+const PolygonBacktestDashboard: React.FC = () => {
   const [patterns, setPatterns] = useState<PatternData[]>([]);
   const [backtestResults, setBacktestResults] = useState<BacktestResult[]>([]);
   const [statistics, setStatistics] = useState<Record<string, any>>({});
@@ -77,8 +418,8 @@ const YahooBacktestDashboard: React.FC = () => {
         patternsToTest = patternsToTest.filter(pattern => pattern.direction === selectedDirection);
       }
       
-      // Run backtest with Yahoo Finance data
-      const results = await backtestPatternsWithYahoo(patternsToTest, true);
+      // Run backtest with Polygon.io data
+      const results = await backtestPatternsWithPolygon(patternsToTest, true);
       
       // Calculate statistics
       const stats = getBacktestStatistics(results);
@@ -191,357 +532,6 @@ const YahooBacktestDashboard: React.FC = () => {
     });
   };
 
-  // Load patterns on component mount
-  useEffect(() => {
-    loadPatterns();
-  }, []);
-
-  // Close notification
-  const handleCloseNotification = () => {
-    setNotification(null);
-  };
-
-  // Add visualization components
-  const PatternPerformanceChart: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
-    // Calculate performance metrics by pattern type
-    const patternMetrics = useMemo(() => {
-      const metrics: Record<string, { total: number, wins: number, winRate: number, avgReturn: number }> = {};
-      
-      // Group results by pattern type and calculate metrics
-      backtestResults.forEach(result => {
-        const patternType = result.patternType;
-        
-        if (!metrics[patternType]) {
-          metrics[patternType] = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
-        }
-        
-        metrics[patternType].total += 1;
-        if (result.successful) {
-          metrics[patternType].wins += 1;
-        }
-        metrics[patternType].avgReturn += result.profitLossPercent;
-      });
-      
-      // Calculate win rates and average returns
-      Object.keys(metrics).forEach(pattern => {
-        metrics[pattern].winRate = (metrics[pattern].wins / metrics[pattern].total) * 100;
-        metrics[pattern].avgReturn = metrics[pattern].avgReturn / metrics[pattern].total;
-      });
-      
-      return metrics;
-    }, [backtestResults]);
-    
-    // Skip rendering if no data
-    if (backtestResults.length === 0 || Object.keys(patternMetrics).length === 0) {
-      return null;
-    }
-
-    // Sort pattern types by win rate for better visualization
-    const sortedPatterns = Object.keys(patternMetrics).sort(
-      (a, b) => patternMetrics[b].winRate - patternMetrics[a].winRate
-    );
-    
-    return (
-      <Paper className="p-4 mt-6 mb-6">
-        <Typography variant="h6" gutterBottom>Pattern Performance Analysis</Typography>
-        
-        <div className="overflow-x-auto">
-          <div style={{ minWidth: '600px' }}>
-            {sortedPatterns.map(pattern => (
-              <div key={pattern} className="mb-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-medium w-48 truncate">{pattern}</span>
-                  <span className="text-sm text-gray-600">
-                    {patternMetrics[pattern].wins}/{patternMetrics[pattern].total} trades
-                  </span>
-                  <span className="font-medium w-20 text-right">
-                    {patternMetrics[pattern].winRate.toFixed(1)}%
-                  </span>
-                </div>
-                <div className="w-full bg-gray-200 rounded-full h-4 relative">
-                  <div 
-                    className={`h-4 rounded-full ${patternMetrics[pattern].avgReturn >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
-                    style={{ width: `${Math.min(Math.max(patternMetrics[pattern].winRate, 0), 100)}%` }}
-                  ></div>
-                  <div 
-                    className="absolute top-0 h-full"
-                    style={{ 
-                      left: '50%', 
-                      width: '2px', 
-                      backgroundColor: 'rgba(0,0,0,0.3)' 
-                    }}
-                  ></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div className="mt-4 text-sm text-gray-600">
-          <div className="flex items-center justify-between">
-            <span>Lower Win Rate</span>
-            <span>Higher Win Rate</span>
-          </div>
-          <div className="flex items-center justify-between mt-1">
-            <span>0%</span>
-            <span>50%</span>
-            <span>100%</span>
-          </div>
-        </div>
-      </Paper>
-    );
-  };
-
-  // Direction Distribution Chart
-  const DirectionDistributionChart: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
-    // Calculate performance metrics by direction
-    const directionMetrics = useMemo(() => {
-      const bullish = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
-      const bearish = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
-      
-      // Group results by direction and calculate metrics
-      backtestResults.forEach(result => {
-        const direction = result.predictedDirection;
-        
-        if (direction === 'bullish') {
-          bullish.total += 1;
-          if (result.successful) {
-            bullish.wins += 1;
-          }
-          bullish.avgReturn += result.profitLossPercent;
-        } else if (direction === 'bearish') {
-          bearish.total += 1;
-          if (result.successful) {
-            bearish.wins += 1;
-          }
-          bearish.avgReturn += result.profitLossPercent;
-        }
-      });
-      
-      // Calculate win rates and average returns
-      if (bullish.total > 0) {
-        bullish.winRate = (bullish.wins / bullish.total) * 100;
-        bullish.avgReturn = bullish.avgReturn / bullish.total;
-      }
-      
-      if (bearish.total > 0) {
-        bearish.winRate = (bearish.wins / bearish.total) * 100;
-        bearish.avgReturn = bearish.avgReturn / bearish.total;
-      }
-      
-      return { bullish, bearish };
-    }, [backtestResults]);
-    
-    // Skip rendering if no data
-    if (backtestResults.length === 0) {
-      return null;
-    }
-
-    return (
-      <Paper className="p-4 mt-6 mb-6">
-        <Typography variant="h6" gutterBottom>Direction Performance</Typography>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Bullish Performance */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-medium">Bullish Patterns</span>
-              <span className="text-sm text-gray-600">
-                {directionMetrics.bullish.wins}/{directionMetrics.bullish.total} trades
-              </span>
-              <span className="font-medium">
-                {directionMetrics.bullish.winRate.toFixed(1)}%
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-6 relative">
-              <div 
-                className={`h-6 rounded-full ${directionMetrics.bullish.avgReturn >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
-                style={{ width: `${Math.min(Math.max(directionMetrics.bullish.winRate, 0), 100)}%` }}
-              >
-                <span className="text-white text-xs font-medium flex items-center justify-center h-full">
-                  {directionMetrics.bullish.avgReturn.toFixed(2)}%
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          {/* Bearish Performance */}
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="font-medium">Bearish Patterns</span>
-              <span className="text-sm text-gray-600">
-                {directionMetrics.bearish.wins}/{directionMetrics.bearish.total} trades
-              </span>
-              <span className="font-medium">
-                {directionMetrics.bearish.winRate.toFixed(1)}%
-              </span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-6 relative">
-              <div 
-                className={`h-6 rounded-full ${directionMetrics.bearish.avgReturn >= 0 ? 'bg-green-500' : 'bg-red-500'}`}
-                style={{ width: `${Math.min(Math.max(directionMetrics.bearish.winRate, 0), 100)}%` }}
-              >
-                <span className="text-white text-xs font-medium flex items-center justify-center h-full">
-                  {directionMetrics.bearish.avgReturn.toFixed(2)}%
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Paper>
-    );
-  };
-
-  // Add detailed metrics component
-  const PatternMetricsTable: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
-    // Group results by pattern type
-    const patternMetrics = useMemo(() => {
-      const metrics: Record<string, {
-        totalTrades: number,
-        winningTrades: number,
-        losingTrades: number,
-        winRate: number,
-        avgProfitLoss: number,
-        avgWinAmount: number,
-        avgLossAmount: number,
-        maxWin: number,
-        maxLoss: number,
-        avgCandlesToBreakout: number,
-        profitFactor: number
-      }> = {};
-      
-      // Process each result to build metrics
-      backtestResults.forEach(result => {
-        const patternType = result.patternType;
-        
-        // Initialize pattern metrics if not exists
-        if (!metrics[patternType]) {
-          metrics[patternType] = {
-            totalTrades: 0,
-            winningTrades: 0,
-            losingTrades: 0,
-            winRate: 0,
-            avgProfitLoss: 0,
-            avgWinAmount: 0,
-            avgLossAmount: 0,
-            maxWin: 0,
-            maxLoss: 0,
-            avgCandlesToBreakout: 0,
-            profitFactor: 0
-          };
-        }
-        
-        // Update metrics
-        metrics[patternType].totalTrades += 1;
-        if (result.successful) {
-          metrics[patternType].winningTrades += 1;
-          metrics[patternType].avgWinAmount += result.profitLossPercent;
-          metrics[patternType].maxWin = Math.max(metrics[patternType].maxWin, result.profitLossPercent);
-        } else {
-          metrics[patternType].losingTrades += 1;
-          metrics[patternType].avgLossAmount += result.profitLossPercent;
-          metrics[patternType].maxLoss = Math.min(metrics[patternType].maxLoss, result.profitLossPercent);
-        }
-        
-        metrics[patternType].avgProfitLoss += result.profitLossPercent;
-        metrics[patternType].avgCandlesToBreakout += result.candlesToBreakout;
-      });
-      
-      // Calculate averages and ratios
-      Object.keys(metrics).forEach(pattern => {
-        const m = metrics[pattern];
-        
-        // Calculate win rate
-        m.winRate = (m.winningTrades / m.totalTrades) * 100;
-        
-        // Calculate averages
-        m.avgProfitLoss = m.avgProfitLoss / m.totalTrades;
-        m.avgCandlesToBreakout = m.avgCandlesToBreakout / m.totalTrades;
-        
-        // Calculate average win and loss amounts
-        if (m.winningTrades > 0) {
-          m.avgWinAmount = m.avgWinAmount / m.winningTrades;
-        }
-        
-        if (m.losingTrades > 0) {
-          m.avgLossAmount = m.avgLossAmount / m.losingTrades;
-        }
-        
-        // Calculate profit factor
-        const totalWins = m.avgWinAmount * m.winningTrades;
-        const totalLosses = Math.abs(m.avgLossAmount * m.losingTrades);
-        m.profitFactor = totalLosses !== 0 ? totalWins / totalLosses : m.winningTrades > 0 ? 999 : 0;
-      });
-      
-      return metrics;
-    }, [backtestResults]);
-    
-    // Sort pattern types by win rate
-    const sortedPatterns = useMemo(() => {
-      return Object.keys(patternMetrics).sort(
-        (a, b) => patternMetrics[b].winRate - patternMetrics[a].winRate
-      );
-    }, [patternMetrics]);
-    
-    if (backtestResults.length === 0) {
-      return null;
-    }
-    
-    return (
-      <Paper className="p-4 mt-6 mb-6">
-        <Typography variant="h6" gutterBottom>Pattern Type Performance Metrics</Typography>
-        
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="px-4 py-2 text-left">Pattern Type</th>
-                <th className="px-4 py-2 text-right">Trades</th>
-                <th className="px-4 py-2 text-right">Win Rate</th>
-                <th className="px-4 py-2 text-right">Avg P/L</th>
-                <th className="px-4 py-2 text-right">Avg Win</th>
-                <th className="px-4 py-2 text-right">Avg Loss</th>
-                <th className="px-4 py-2 text-right">Profit Factor</th>
-                <th className="px-4 py-2 text-right">Candles to BK</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedPatterns.map(pattern => (
-                <tr key={pattern} className="border-t">
-                  <td className="px-4 py-2 font-medium">{pattern}</td>
-                  <td className="px-4 py-2 text-right">{patternMetrics[pattern].totalTrades}</td>
-                  <td className="px-4 py-2 text-right font-semibold" style={{ 
-                    color: patternMetrics[pattern].winRate >= 60 ? '#16a34a' : 
-                            patternMetrics[pattern].winRate >= 45 ? '#ca8a04' : '#dc2626' 
-                  }}>
-                    {patternMetrics[pattern].winRate.toFixed(1)}%
-                  </td>
-                  <td className="px-4 py-2 text-right" style={{ 
-                    color: patternMetrics[pattern].avgProfitLoss >= 0 ? '#16a34a' : '#dc2626' 
-                  }}>
-                    {patternMetrics[pattern].avgProfitLoss.toFixed(2)}%
-                  </td>
-                  <td className="px-4 py-2 text-right text-green-600">
-                    +{patternMetrics[pattern].avgWinAmount.toFixed(2)}%
-                  </td>
-                  <td className="px-4 py-2 text-right text-red-600">
-                    {patternMetrics[pattern].avgLossAmount.toFixed(2)}%
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {patternMetrics[pattern].profitFactor.toFixed(2)}
-                  </td>
-                  <td className="px-4 py-2 text-right">
-                    {patternMetrics[pattern].avgCandlesToBreakout.toFixed(1)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Paper>
-    );
-  };
-
   // Export backtest results to CSV
   const exportToCSV = () => {
     try {
@@ -594,7 +584,7 @@ const YahooBacktestDashboard: React.FC = () => {
       const encodedUri = encodeURI(csvContent);
       const link = document.createElement('a');
       link.setAttribute('href', encodedUri);
-      link.setAttribute('download', `yahoo_backtest_results_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `polygon_backtest_results_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       
       // Trigger download
@@ -641,7 +631,7 @@ const YahooBacktestDashboard: React.FC = () => {
       // Create download link
       const link = document.createElement('a');
       link.setAttribute('href', jsonContent);
-      link.setAttribute('download', `yahoo_backtest_report_${new Date().toISOString().split('T')[0]}.json`);
+      link.setAttribute('download', `polygon_backtest_report_${new Date().toISOString().split('T')[0]}.json`);
       document.body.appendChild(link);
       
       // Trigger download
@@ -658,9 +648,19 @@ const YahooBacktestDashboard: React.FC = () => {
     }
   };
 
+  // Load patterns on component mount
+  useEffect(() => {
+    loadPatterns();
+  }, []);
+
+  // Close notification
+  const handleCloseNotification = () => {
+    setNotification(null);
+  };
+
   return (
     <div className="p-4">
-      <h2 className="text-xl font-bold mb-4">Backtest with Yahoo Finance Data</h2>
+      <h2 className="text-xl font-bold mb-4">Backtest with Polygon.io Data</h2>
       
       {error && (
         <div className="p-4 mb-4 bg-red-100 border border-red-400 text-red-700 rounded">
@@ -672,54 +672,51 @@ const YahooBacktestDashboard: React.FC = () => {
         <div className="mb-4">
           <h3 className="text-lg font-semibold mb-2">Backtest Configuration</h3>
           <div className="flex flex-wrap gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Timeframe</label>
-              <select 
-                value={selectedTimeframe}
-                onChange={(e) => setSelectedTimeframe(e.target.value)}
-                className="p-2 border rounded"
-              >
-                <option value="all">All Timeframes</option>
-                <option value="15m">15 Minutes</option>
-                <option value="30m">30 Minutes</option>
-                <option value="1h">1 Hour</option>
-                <option value="4h">4 Hours</option>
-                <option value="1d">1 Day</option>
-                <option value="1w">1 Week</option>
-              </select>
-            </div>
+            <Box sx={{ minWidth: 200 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Timeframe</InputLabel>
+                <Select
+                  value={selectedTimeframe}
+                  label="Timeframe"
+                  onChange={(e) => setSelectedTimeframe(e.target.value)}
+                >
+                  <MenuItem value="all">All Timeframes</MenuItem>
+                  <MenuItem value="15m">15 Minutes</MenuItem>
+                  <MenuItem value="30m">30 Minutes</MenuItem>
+                  <MenuItem value="1h">1 Hour</MenuItem>
+                  <MenuItem value="4h">4 Hours</MenuItem>
+                  <MenuItem value="1d">Daily</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
             
-            <div>
-              <label className="block text-sm font-medium mb-1">Direction</label>
-              <select 
-                value={selectedDirection}
-                onChange={(e) => setSelectedDirection(e.target.value)}
-                className="p-2 border rounded"
-              >
-                <option value="all">All Directions</option>
-                <option value="bullish">Bullish</option>
-                <option value="bearish">Bearish</option>
-              </select>
-            </div>
+            <Box sx={{ minWidth: 200 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Direction</InputLabel>
+                <Select
+                  value={selectedDirection}
+                  label="Direction"
+                  onChange={(e) => setSelectedDirection(e.target.value)}
+                >
+                  <MenuItem value="all">All Directions</MenuItem>
+                  <MenuItem value="bullish">Bullish</MenuItem>
+                  <MenuItem value="bearish">Bearish</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
           </div>
         </div>
         
         <div className="flex flex-wrap gap-4">
-          <button 
-            onClick={loadPatterns}
-            disabled={loading}
-            className="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 disabled:bg-gray-400"
-          >
-            {loading ? 'Loading Patterns...' : 'Refresh Patterns'}
-          </button>
-          
-          <button 
+          <Button 
+            variant="contained" 
+            color="primary"
             onClick={runBacktest}
-            disabled={loading || backtestLoading || patterns.length === 0}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
+            disabled={backtestLoading || patterns.length === 0}
+            startIcon={backtestLoading ? <CircularProgress size={20} /> : null}
           >
-            {backtestLoading ? 'Running Backtest...' : 'Run Backtest'}
-          </button>
+            {backtestLoading ? 'Running...' : 'Run Backtest'}
+          </Button>
           
           <Button
             variant="outlined"
@@ -734,6 +731,7 @@ const YahooBacktestDashboard: React.FC = () => {
             variant="outlined"
             color="error"
             onClick={clearPatterns}
+            startIcon={<DeleteIcon />}
           >
             Clear All
           </Button>
@@ -759,12 +757,6 @@ const YahooBacktestDashboard: React.FC = () => {
               </Tooltip>
             </ButtonGroup>
           )}
-        </div>
-        
-        <div className="mt-4">
-          <p className="text-sm text-gray-600">
-            {patterns.length} patterns loaded for backtesting
-          </p>
         </div>
       </div>
       
@@ -816,20 +808,20 @@ const YahooBacktestDashboard: React.FC = () => {
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <p className="text-gray-500">Total Trades:</p>
-                  <p className="font-semibold">{statistics.overall.totalTrades}</p>
+                  <p className="font-semibold">{statistics.overall?.totalTrades || 0}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Win Rate:</p>
-                  <p className="font-semibold">{statistics.overall.winRate.toFixed(1)}%</p>
+                  <p className="font-semibold">{statistics.overall?.winRate.toFixed(1) || 0}%</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Profit Factor:</p>
-                  <p className="font-semibold">{statistics.overall.profitFactor.toFixed(2)}</p>
+                  <p className="font-semibold">{statistics.overall?.profitFactor.toFixed(2) || 0}</p>
                 </div>
                 <div>
                   <p className="text-gray-500">Avg. Profit/Loss:</p>
-                  <p className={`font-semibold ${statistics.overall.averageProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {statistics.overall.averageProfitLoss.toFixed(2)}%
+                  <p className={`font-semibold ${statistics.overall?.averageProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {statistics.overall?.averageProfitLoss.toFixed(2) || 0}%
                   </p>
                 </div>
               </div>
@@ -910,7 +902,7 @@ const YahooBacktestDashboard: React.FC = () => {
       
       <div className="mt-8 p-4 bg-gray-100 rounded">
         <h3 className="text-lg font-semibold mb-2">Backtest Information</h3>
-        <p>This backtesting system uses Yahoo Finance historical data for accurate performance analysis.</p>
+        <p>This backtesting system uses Polygon.io historical data for accurate performance analysis.</p>
         <p className="mt-2">The "Average Candles to Breakout" metric shows how many candles it typically takes for a pattern to reach its target, helping you position your trades effectively.</p>
         <p className="mt-2">Win Rate and Profit Factor metrics help you identify the most reliable pattern types and timeframes for your trading strategy.</p>
         <p className="mt-2">You can generate mock patterns to test the backtesting system without real pattern data.</p>
@@ -934,4 +926,4 @@ const YahooBacktestDashboard: React.FC = () => {
   );
 };
 
-export default YahooBacktestDashboard;
+export default PolygonBacktestDashboard; 

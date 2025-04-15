@@ -271,8 +271,8 @@ const Navbar: React.FC<NavbarProps> = ({ user = { name: 'Demo User', email: 'dem
         <Box sx={{ display: 'flex', alignItems: 'center' }}>
           <TrendingUpIcon sx={{ mr: 1 }} />
           <Typography variant="h6" component="div" sx={{ fontWeight: 'bold' }}>
-            Breakout Scanner
-          </Typography>
+          Breakout Scanner
+        </Typography>
         </Box>
         <IconButton onClick={handleDrawerToggle} sx={{ color: 'primary.contrastText' }}>
           <CloseIcon />
@@ -286,7 +286,7 @@ const Navbar: React.FC<NavbarProps> = ({ user = { name: 'Demo User', email: 'dem
           <Avatar sx={{ mr: 2, bgcolor: 'primary.main' }} src={user?.avatar}>
             <PersonIcon />
           </Avatar>
-          <Box>
+        <Box>
             <Typography variant="subtitle2" fontWeight="bold">{user.name}</Typography>
             <Typography variant="caption" color="text.secondary">{user.plan}</Typography>
           </Box>
@@ -603,9 +603,9 @@ const Navbar: React.FC<NavbarProps> = ({ user = { name: 'Demo User', email: 'dem
                 }} 
               />
             </Box>
-          </Box>
-        </Toolbar>
-      </AppBar>
+        </Box>
+      </Toolbar>
+    </AppBar>
 
       {/* Dropdown user menu */}
       <Menu

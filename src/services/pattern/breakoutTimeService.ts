@@ -36,7 +36,7 @@ export class BreakoutTimeService {
     avgCandlesToBreakout?: number
   ): BreakoutTimeInfo {
     const now = new Date();
-    const createdAt = new Date(pattern.createdAt);
+    const createdAt = new Date(pattern.created_at);
     const config = TIMEFRAME_CONFIG[pattern.timeframe] || TIMEFRAME_CONFIG['1h'];
     
     // Use provided avgCandlesToBreakout or default from config

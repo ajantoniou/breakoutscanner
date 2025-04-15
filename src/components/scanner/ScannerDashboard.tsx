@@ -949,69 +949,69 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
             gap: 2 
           }}>
             <Box>
-              <FormControl fullWidth>
-                <InputLabel id="confidence-filter-label">Min Confidence</InputLabel>
-                <Select
-                  labelId="confidence-filter-label"
-                  id="confidence-filter"
-                  value={confidenceFilter}
-                  label="Min Confidence"
-                  onChange={handleConfidenceFilterChange}
-                >
-                  <MenuItem value={0}>All</MenuItem>
-                  <MenuItem value={60}>60%+</MenuItem>
-                  <MenuItem value={70}>70%+</MenuItem>
-                  <MenuItem value={80}>80%+</MenuItem>
-                  <MenuItem value={90}>90%+</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-            
-            <Box>
-              <FormControl fullWidth>
-                <InputLabel id="direction-filter-label">Direction</InputLabel>
-                <Select
-                  labelId="direction-filter-label"
-                  id="direction-filter"
-                  value={directionFilter}
-                  label="Direction"
-                  onChange={handleDirectionFilterChange}
-                >
-                  <MenuItem value="all">All</MenuItem>
-                  <MenuItem value="bullish">Bullish</MenuItem>
-                  <MenuItem value="bearish">Bearish</MenuItem>
-                </Select>
-              </FormControl>
-            </Box>
-            
-            <Box>
-              <FormControl fullWidth>
-                <InputLabel id="timeframe-label">Timeframe</InputLabel>
-                <Select
-                  labelId="timeframe-label"
-                  id="timeframe"
-                  value={selectedTimeframe}
-                  label="Timeframe"
-                  onChange={handleTimeframeChange}
-                >
-                  {allowedTimeframes.map((tf) => (
-                    <MenuItem key={tf} value={tf}>{tf}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-            </Box>
-            
-            <Box>
-              <Button 
-                variant="contained" 
-                color="primary" 
-                fullWidth
-                onClick={() => onRunScanner(currentMode, selectedTimeframe)}
-                disabled={isLoading}
-                startIcon={isLoading && activeScanner === currentMode ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+            <FormControl fullWidth>
+              <InputLabel id="confidence-filter-label">Min Confidence</InputLabel>
+              <Select
+                labelId="confidence-filter-label"
+                id="confidence-filter"
+                value={confidenceFilter}
+                label="Min Confidence"
+                onChange={handleConfidenceFilterChange}
               >
-                {isLoading && activeScanner === currentMode ? 'Scanning...' : 'Run Scanner'}
-              </Button>
+                <MenuItem value={0}>All</MenuItem>
+                <MenuItem value={60}>60%+</MenuItem>
+                <MenuItem value={70}>70%+</MenuItem>
+                <MenuItem value={80}>80%+</MenuItem>
+                <MenuItem value={90}>90%+</MenuItem>
+              </Select>
+            </FormControl>
+            </Box>
+          
+            <Box>
+            <FormControl fullWidth>
+              <InputLabel id="direction-filter-label">Direction</InputLabel>
+              <Select
+                labelId="direction-filter-label"
+                id="direction-filter"
+                value={directionFilter}
+                label="Direction"
+                onChange={handleDirectionFilterChange}
+              >
+                <MenuItem value="all">All</MenuItem>
+                <MenuItem value="bullish">Bullish</MenuItem>
+                <MenuItem value="bearish">Bearish</MenuItem>
+              </Select>
+            </FormControl>
+            </Box>
+          
+            <Box>
+            <FormControl fullWidth>
+              <InputLabel id="timeframe-label">Timeframe</InputLabel>
+              <Select
+                labelId="timeframe-label"
+                id="timeframe"
+                value={selectedTimeframe}
+                label="Timeframe"
+                onChange={handleTimeframeChange}
+              >
+                {allowedTimeframes.map((tf) => (
+                  <MenuItem key={tf} value={tf}>{tf}</MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            </Box>
+          
+            <Box>
+            <Button 
+              variant="contained" 
+              color="primary" 
+              fullWidth
+              onClick={() => onRunScanner(currentMode, selectedTimeframe)}
+              disabled={isLoading}
+                startIcon={isLoading && activeScanner === currentMode ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+            >
+              {isLoading && activeScanner === currentMode ? 'Scanning...' : 'Run Scanner'}
+            </Button>
             </Box>
             
             <Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / 3', md: '1 / 3' } }}>
@@ -1133,30 +1133,30 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
             Backtest Stats for {selectedTimeframe}
           </Typography>
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2 }}>
-            <Box sx={{ textAlign: 'center', p: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Avg Candles to Breakout
-              </Typography>
-              <Typography variant="h6">
-                {avgCandlesToBreakout.toFixed(1)}
-              </Typography>
-            </Box>
-            <Box sx={{ textAlign: 'center', p: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Win Rate
-              </Typography>
-              <Typography variant="h6">
-                {(winRate * 100).toFixed(1)}%
-              </Typography>
-            </Box>
-            <Box sx={{ textAlign: 'center', p: 1 }}>
-              <Typography variant="body2" color="text.secondary">
-                Profit Factor
-              </Typography>
-              <Typography variant="h6">
-                {profitFactor.toFixed(2)}
-              </Typography>
-            </Box>
+              <Box sx={{ textAlign: 'center', p: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Avg Candles to Breakout
+                </Typography>
+                <Typography variant="h6">
+                  {avgCandlesToBreakout.toFixed(1)}
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center', p: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Win Rate
+                </Typography>
+                <Typography variant="h6">
+                  {(winRate * 100).toFixed(1)}%
+                </Typography>
+              </Box>
+              <Box sx={{ textAlign: 'center', p: 1 }}>
+                <Typography variant="body2" color="text.secondary">
+                  Profit Factor
+                </Typography>
+                <Typography variant="h6">
+                  {profitFactor.toFixed(2)}
+                </Typography>
+              </Box>
           </Box>
         </Paper>
       </Box>
@@ -1211,7 +1211,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
               }}>
                 {currentResults.map((pattern, index) => (
                   <Box key={pattern.id || index}>
-                    <PatternCard 
+                  <PatternCard 
                       pattern={{
                         id: pattern.id,
                         symbol: pattern.symbol,
@@ -1291,7 +1291,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
               }}>
                 {currentResults.map((pattern, index) => (
                   <Box key={pattern.id || index}>
-                    <PatternCard 
+                  <PatternCard 
                       pattern={{
                         id: pattern.id,
                         symbol: pattern.symbol,
