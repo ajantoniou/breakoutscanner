@@ -26,31 +26,20 @@ import {
   Stack,
   useTheme,
   Badge,
-  CardActions
+  CardActions,
+  useMediaQuery,
+  Theme
 } from '@mui/material';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import TrendingDownIcon from '@mui/icons-material/TrendingDown';
-import WarningIcon from '@mui/icons-material/Warning';
-import StarIcon from '@mui/icons-material/Star';
-import BarChartIcon from '@mui/icons-material/BarChart';
-import ShowChartIcon from '@mui/icons-material/ShowChart';
-import HistoryIcon from '@mui/icons-material/History';
-import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ErrorIcon from '@mui/icons-material/Error';
-import HourglassEmptyIcon from '@mui/icons-material/HourglassEmpty';
-import TimerIcon from '@mui/icons-material/Timer';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import NotificationsIcon from '@mui/icons-material/Notifications';
-import SettingsIcon from '@mui/icons-material/Settings';
-import SpeedIcon from '@mui/icons-material/Speed';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import PauseIcon from '@mui/icons-material/Pause';
-import MoreVertIcon from '@mui/icons-material/MoreVert';
-import VisibilityIcon from '@mui/icons-material/Visibility';
-import TuneIcon from '@mui/icons-material/Tune';
-import UpdateIcon from '@mui/icons-material/Update';
-import AssessmentIcon from '@mui/icons-material/Assessment';
 import { Link as RouterLink } from 'react-router-dom';
+import {
+  Refresh as RefreshIcon,
+  TrendingUp,
+  Warning,
+  CheckCircle,
+  Error as ErrorIcon,
+  Notifications,
+  Settings,
+} from '@mui/icons-material';
 
 // Mock data for dashboard
 const scannerStatus = [
@@ -230,6 +219,8 @@ const Dashboard = () => {
   const [activeAlerts, setActiveAlerts] = useState(recentAlerts);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.down('md'));
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setTabValue(newValue);
@@ -311,24 +302,71 @@ const Dashboard = () => {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 2, mb: 4 }}>
-      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Container 
+      maxWidth="xl" 
+      sx={{ 
+        mt: { xs: 1, sm: 2 }, 
+        mb: { xs: 2, sm: 4 },
+        px: { xs: 1, sm: 2 } // Smaller padding on mobile
+      }}
+    >
+      <Box sx={{ 
+        mb: { xs: 2, sm: 3 }, 
+        display: 'flex', 
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: { xs: 1, sm: 0 },
+        justifyContent: 'space-between', 
+        alignItems: { xs: 'stretch', sm: 'center' }
+      }}>
         <Box>
-          <Typography variant="h4" component="h1" fontWeight="bold" gutterBottom>
+          <Typography 
+            variant="h4" 
+            component="h1" 
+            fontWeight="bold" 
+            gutterBottom
+            sx={{ 
+              fontSize: { xs: '1.5rem', sm: '2rem' },
+              lineHeight: { xs: 1.3, sm: 1.4 }
+            }}
+          >
             Dashboard
           </Typography>
-          <Typography variant="subtitle1" color="text.secondary">
+          <Typography 
+            variant="subtitle1" 
+            color="text.secondary"
+            sx={{ 
+              fontSize: { xs: '0.875rem', sm: '1rem' }
+            }}
+          >
             Scanner overview and activity
           </Typography>
         </Box>
-        <Box>
+        <Box sx={{ 
+          display: 'flex', 
+          gap: 1,
+          justifyContent: { xs: 'flex-start', sm: 'flex-end' }
+        }}>
           <Tooltip title="Refresh dashboard">
-            <IconButton onClick={refreshData} disabled={isRefreshing}>
+            <IconButton 
+              onClick={refreshData} 
+              disabled={isRefreshing}
+              sx={{ 
+                bgcolor: 'background.paper',
+                '&:hover': { bgcolor: 'action.hover' }
+              }}
+            >
               {isRefreshing ? <CircularProgress size={24} /> : <RefreshIcon />}
             </IconButton>
           </Tooltip>
           <Tooltip title="Dashboard settings">
-            <IconButton component={RouterLink} to="/settings/dashboard">
+            <IconButton 
+              component={RouterLink} 
+              to="/settings/dashboard"
+              sx={{ 
+                bgcolor: 'background.paper',
+                '&:hover': { bgcolor: 'action.hover' }
+              }}
+            >
               <TuneIcon />
             </IconButton>
           </Tooltip>
@@ -337,7 +375,7 @@ const Dashboard = () => {
       
       {/* Alerts section */}
       {activeAlerts.length > 0 && (
-        <Box sx={{ mb: 3 }}>
+        <Box sx={{ mb: { xs: 2, sm: 3 } }}>
           <Stack spacing={1}>
             {activeAlerts.map(alert => (
               <Alert 
@@ -349,12 +387,31 @@ const Dashboard = () => {
                   borderRadius: 2,
                   '& .MuiAlert-icon': {
                     alignItems: 'center'
+                  },
+                  '& .MuiAlert-message': {
+                    width: '100%'
                   }
                 }}
               >
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                <Box sx={{ 
+                  display: 'flex', 
+                  flexDirection: { xs: 'column', sm: 'row' },
+                  gap: { xs: 0.5, sm: 0 },
+                  justifyContent: 'space-between', 
+                  alignItems: { xs: 'flex-start', sm: 'center' },
+                  width: '100%'
+                }}>
                   <Typography variant="body2">{alert.message}</Typography>
-                  <Typography variant="caption" color="text.secondary">{alert.timestamp}</Typography>
+                  <Typography 
+                    variant="caption" 
+                    color="text.secondary"
+                    sx={{ 
+                      minWidth: { sm: '100px' },
+                      textAlign: { sm: 'right' }
+                    }}
+                  >
+                    {alert.timestamp}
+                  </Typography>
                 </Box>
               </Alert>
             ))}
@@ -363,34 +420,86 @@ const Dashboard = () => {
       )}
       
       {/* Quick Stats Row */}
-      <Grid container spacing={2} sx={{ mb: 3 }}>
+      <Grid container spacing={{ xs: 1, sm: 2 }} sx={{ mb: { xs: 2, sm: 3 } }}>
         <Grid item xs={6} md={3}>
-          <Card sx={{ borderRadius: 2, boxShadow: 2 }}>
-            <CardContent sx={{ py: 2 }}>
-              <Typography variant="overline" color="text.secondary">
+          <Card sx={{ 
+            borderRadius: 2, 
+            boxShadow: 2,
+            height: '100%'
+          }}>
+            <CardContent sx={{ 
+              py: { xs: 1.5, sm: 2 },
+              px: { xs: 1.5, sm: 2 },
+              '&:last-child': { pb: { xs: 1.5, sm: 2 } }
+            }}>
+              <Typography 
+                variant="overline" 
+                color="text.secondary"
+                sx={{ 
+                  fontSize: { xs: '0.625rem', sm: '0.75rem' }
+                }}
+              >
                 Active Patterns
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Typography variant="h4" component="div" fontWeight="bold" sx={{ mr: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                <Typography 
+                  variant="h4" 
+                  component="div" 
+                  fontWeight="bold" 
+                  sx={{ 
+                    mr: 1,
+                    fontSize: { xs: '1.5rem', sm: '2rem' }
+                  }}
+                >
                   {performanceMetrics.activePatterns}
                 </Typography>
                 <Chip 
                   label={`+${Math.round(performanceMetrics.activePatterns * 0.15)} today`} 
                   color="success" 
                   size="small"
+                  sx={{ 
+                    height: { xs: 20, sm: 24 },
+                    '& .MuiChip-label': {
+                      px: { xs: 1, sm: 1.5 },
+                      fontSize: { xs: '0.625rem', sm: '0.75rem' }
+                    }
+                  }}
                 />
               </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={6} md={3}>
-          <Card sx={{ borderRadius: 2, boxShadow: 2 }}>
-            <CardContent sx={{ py: 2 }}>
-              <Typography variant="overline" color="text.secondary">
+          <Card sx={{ 
+            borderRadius: 2, 
+            boxShadow: 2,
+            height: '100%'
+          }}>
+            <CardContent sx={{ 
+              py: { xs: 1.5, sm: 2 },
+              px: { xs: 1.5, sm: 2 },
+              '&:last-child': { pb: { xs: 1.5, sm: 2 } }
+            }}>
+              <Typography 
+                variant="overline" 
+                color="text.secondary"
+                sx={{ 
+                  fontSize: { xs: '0.625rem', sm: '0.75rem' }
+                }}
+              >
                 Win Rate
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Typography variant="h4" component="div" fontWeight="bold" color="success.main" sx={{ mr: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                <Typography 
+                  variant="h4" 
+                  component="div" 
+                  fontWeight="bold" 
+                  color="success.main" 
+                  sx={{ 
+                    mr: 1,
+                    fontSize: { xs: '1.5rem', sm: '2rem' }
+                  }}
+                >
                   {performanceMetrics.successRate.toFixed(1)}%
                 </Typography>
                 <TrendingUpIcon color="success" />
@@ -399,32 +508,83 @@ const Dashboard = () => {
           </Card>
         </Grid>
         <Grid item xs={6} md={3}>
-          <Card sx={{ borderRadius: 2, boxShadow: 2 }}>
-            <CardContent sx={{ py: 2 }}>
-              <Typography variant="overline" color="text.secondary">
+          <Card sx={{ 
+            borderRadius: 2, 
+            boxShadow: 2,
+            height: '100%'
+          }}>
+            <CardContent sx={{ 
+              py: { xs: 1.5, sm: 2 },
+              px: { xs: 1.5, sm: 2 },
+              '&:last-child': { pb: { xs: 1.5, sm: 2 } }
+            }}>
+              <Typography 
+                variant="overline" 
+                color="text.secondary"
+                sx={{ 
+                  fontSize: { xs: '0.625rem', sm: '0.75rem' }
+                }}
+              >
                 System Health
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Typography variant="h4" component="div" fontWeight="bold" sx={{ mr: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                <Typography 
+                  variant="h4" 
+                  component="div" 
+                  fontWeight="bold" 
+                  sx={{ 
+                    mr: 1,
+                    fontSize: { xs: '1.5rem', sm: '2rem' }
+                  }}
+                >
                   {systemHealth.apiStatus === 'Healthy' ? 'Good' : 'Check'}
                 </Typography>
                 <Chip 
                   label={systemHealth.apiStatus} 
                   color={systemHealth.apiStatus === 'Healthy' ? 'success' : 'warning'} 
                   size="small"
+                  sx={{ 
+                    height: { xs: 20, sm: 24 },
+                    '& .MuiChip-label': {
+                      px: { xs: 1, sm: 1.5 },
+                      fontSize: { xs: '0.625rem', sm: '0.75rem' }
+                    }
+                  }}
                 />
               </Box>
             </CardContent>
           </Card>
         </Grid>
         <Grid item xs={6} md={3}>
-          <Card sx={{ borderRadius: 2, boxShadow: 2 }}>
-            <CardContent sx={{ py: 2 }}>
-              <Typography variant="overline" color="text.secondary">
+          <Card sx={{ 
+            borderRadius: 2, 
+            boxShadow: 2,
+            height: '100%'
+          }}>
+            <CardContent sx={{ 
+              py: { xs: 1.5, sm: 2 },
+              px: { xs: 1.5, sm: 2 },
+              '&:last-child': { pb: { xs: 1.5, sm: 2 } }
+            }}>
+              <Typography 
+                variant="overline" 
+                color="text.secondary"
+                sx={{ 
+                  fontSize: { xs: '0.625rem', sm: '0.75rem' }
+                }}
+              >
                 Next Pattern
               </Typography>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                <Typography variant="h4" component="div" fontWeight="bold" sx={{ mr: 1 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', mt: 0.5 }}>
+                <Typography 
+                  variant="h4" 
+                  component="div" 
+                  fontWeight="bold" 
+                  sx={{ 
+                    mr: 1,
+                    fontSize: { xs: '1.5rem', sm: '2rem' }
+                  }}
+                >
                   ~24 min
                 </Typography>
                 <TimerIcon color="primary" />
@@ -437,20 +597,25 @@ const Dashboard = () => {
       <Grid container spacing={3}>
         {/* Scanner Status Section - Left Column */}
         <Grid item xs={12} md={8}>
-          <Paper 
-            sx={{ 
-              p: 3, 
-              height: '100%',
-              borderRadius: 2,
-              boxShadow: 2
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Paper sx={{ 
+            p: { xs: 2, sm: 3 }, 
+            height: '100%',
+            borderRadius: 2,
+            boxShadow: 2
+          }}>
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: { xs: 1, sm: 0 },
+              justifyContent: 'space-between', 
+              alignItems: { xs: 'flex-start', sm: 'center' }, 
+              mb: 2 
+            }}>
               <Typography variant="h6" fontWeight="bold">
                 Scanner Status
               </Typography>
               <Button 
-                size="small" 
+                size={isMobile ? "small" : "medium"}
                 variant="outlined" 
                 startIcon={<AssessmentIcon />}
                 component={RouterLink}
@@ -460,7 +625,7 @@ const Dashboard = () => {
               </Button>
             </Box>
             
-            <Grid container spacing={2}>
+            <Grid container spacing={{ xs: 1, sm: 2 }}>
               {scannerStatus.map((scanner) => (
                 <Grid item xs={12} sm={6} key={scanner.id}>
                   <Card 
@@ -476,7 +641,10 @@ const Dashboard = () => {
                       }
                     }}
                   >
-                    <CardContent>
+                    <CardContent sx={{ 
+                      p: { xs: 1.5, sm: 2 },
+                      '&:last-child': { pb: { xs: 1.5, sm: 2 } }
+                    }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                         <Avatar 
                           sx={{ 
@@ -557,16 +725,14 @@ const Dashboard = () => {
         
         {/* Performance Metrics - Right Column */}
         <Grid item xs={12} md={4}>
-          <Paper 
-            sx={{ 
-              p: 3, 
-              height: '100%',
-              borderRadius: 2,
-              boxShadow: 2,
-              display: 'flex',
-              flexDirection: 'column'
-            }}
-          >
+          <Paper sx={{ 
+            p: { xs: 2, sm: 3 }, 
+            height: '100%',
+            borderRadius: 2,
+            boxShadow: 2,
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
               <Typography variant="h6" fontWeight="bold">
                 Performance Metrics
@@ -738,24 +904,37 @@ const Dashboard = () => {
         
         {/* Recent Patterns - Full Width */}
         <Grid item xs={12}>
-          <Paper 
-            sx={{ 
-              p: 3,
-              borderRadius: 2,
-              boxShadow: 2
-            }}
-          >
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Paper sx={{ 
+            p: { xs: 2, sm: 3 },
+            borderRadius: 2,
+            boxShadow: 2
+          }}>
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: { xs: 1, sm: 0 },
+              justifyContent: 'space-between', 
+              alignItems: { xs: 'flex-start', sm: 'center' }, 
+              mb: 2 
+            }}>
               <Typography variant="h6" fontWeight="bold">
                 Recent Patterns
               </Typography>
-              <Box>
+              <Box sx={{ width: { xs: '100%', sm: 'auto' } }}>
                 <Tabs 
                   value={tabValue} 
                   onChange={handleTabChange} 
                   aria-label="pattern tabs"
                   indicatorColor="primary"
                   textColor="primary"
+                  variant={isMobile ? "fullWidth" : "standard"}
+                  sx={{
+                    minHeight: { xs: 36, sm: 48 },
+                    '& .MuiTab-root': {
+                      minHeight: { xs: 36, sm: 48 },
+                      fontSize: { xs: '0.75rem', sm: '0.875rem' }
+                    }
+                  }}
                 >
                   <Tab label="All" />
                   <Tab label="Bullish" />
@@ -764,7 +943,14 @@ const Dashboard = () => {
               </Box>
             </Box>
             
-            <List>
+            <List sx={{ 
+              '& .MuiListItem-root': {
+                flexDirection: { xs: 'column', sm: 'row' },
+                alignItems: { xs: 'flex-start', sm: 'center' },
+                gap: { xs: 1, sm: 0 },
+                py: { xs: 1, sm: 1.5 }
+              }
+            }}>
               {recentPatterns
                 .filter(pattern => tabValue === 0 || 
                   (tabValue === 1 && pattern.type === 'bullish') || 
@@ -864,12 +1050,19 @@ const Dashboard = () => {
               ))}
             </List>
             
-            <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
+            <Box sx={{ 
+              display: 'flex', 
+              flexDirection: { xs: 'column', sm: 'row' },
+              gap: { xs: 1, sm: 2 },
+              justifyContent: 'center', 
+              mt: 2 
+            }}>
               <Button 
                 variant="contained" 
                 component={RouterLink} 
                 to="/golden-scanner"
-                sx={{ mx: 1 }}
+                fullWidth={isMobile}
+                size={isMobile ? "small" : "medium"}
               >
                 View All Patterns
               </Button>
@@ -877,7 +1070,8 @@ const Dashboard = () => {
                 variant="outlined"
                 component={RouterLink}
                 to="/patterns/completed"
-                sx={{ mx: 1 }}
+                fullWidth={isMobile}
+                size={isMobile ? "small" : "medium"}
               >
                 View Trade History
               </Button>
@@ -887,18 +1081,16 @@ const Dashboard = () => {
         
         {/* System Health */}
         <Grid item xs={12}>
-          <Paper 
-            sx={{ 
-              p: 3,
-              borderRadius: 2,
-              boxShadow: 2
-            }}
-          >
+          <Paper sx={{ 
+            p: { xs: 2, sm: 3 },
+            borderRadius: 2,
+            boxShadow: 2
+          }}>
             <Typography variant="h6" fontWeight="bold" gutterBottom>
               System Health
             </Typography>
             
-            <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid container spacing={{ xs: 1.5, sm: 2 }} sx={{ mt: { xs: 0.5, sm: 1 } }}>
               <Grid item xs={6} md={3}>
                 <Box>
                   <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>

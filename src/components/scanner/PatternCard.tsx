@@ -9,7 +9,8 @@ import {
   Divider,
   Chip,
   Stack,
-  Tooltip
+  Tooltip,
+  Grid
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -19,6 +20,14 @@ import WarningIcon from '@mui/icons-material/Warning';
 import ArchiveIcon from '@mui/icons-material/Archive';
 import { format, differenceInHours, differenceInDays } from 'date-fns';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
+import { BreakoutTimeService } from '@/services/pattern/breakoutTimeService';
+
+// Add this interface to properly map between component and service
+interface BreakoutServicePattern {
+  createdAt: string;
+  timeframe: string;
+  status: 'active' | 'completed' | 'failed';
+}
 
 interface PatternCardProps {
   pattern: {
@@ -37,6 +46,7 @@ interface PatternCardProps {
     ema_pattern?: string;
     status: string;
     risk_reward_ratio?: number;
+    direction?: 'bullish' | 'bearish';
   };
   avgCandlesToBreakout?: number;
   onArchive?: (id: string) => void;
@@ -73,13 +83,16 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     return 'Low';
   };
   
-  // Determine if the pattern is bullish based on pattern_type
-  const isBullish = pattern.pattern_type.includes('Bull') || 
-                   pattern.pattern_type.includes('Cup') || 
-                   pattern.pattern_type.includes('Bottom') ||
-                   pattern.pattern_type.includes('Ascending');
+  // Determine if the pattern is bullish based on direction property or pattern_type
+  const isBullish = pattern.direction === 'bullish' ? true :
+                    pattern.direction === 'bearish' ? false :
+                    pattern.pattern_type.includes('Bull') || 
+                    pattern.pattern_type.includes('Cup') || 
+                    pattern.pattern_type.includes('Bottom') ||
+                    pattern.pattern_type.includes('Ascending');
   
-  const direction = isBullish ? 'bullish' : 'bearish';
+  // Only set direction if it's not already defined in the pattern
+  const direction = pattern.direction || (isBullish ? 'bullish' : 'bearish');
   
   // Format the time since creation
   const timeAgo = formatDistanceToNow(new Date(pattern.created_at), { addSuffix: true });
@@ -87,69 +100,25 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
   // Format created date for display
   const formattedCreatedDate = format(new Date(pattern.created_at), 'MMM d, yyyy h:mm a');
   
-  // Check if the expected breakout date is in the past
-  const getExpectedBreakoutTime = () => {
-    if (!avgCandlesToBreakout) return { text: 'N/A', isPast: false, isStale: false, hoursPast: 0 };
+  // Get breakout time info using the new service
+  const breakoutInfo = useMemo(() => {
+    // Normalize status to lowercase for compatibility
+    const normalizedStatus = typeof pattern.status === 'string' 
+      ? pattern.status.toLowerCase() as 'active' | 'completed' | 'failed'
+      : 'active';
     
-    const createdAt = new Date(pattern.created_at);
-    let timeframeInMinutes = 0;
-    
-    // Convert timeframe to minutes
-    switch (pattern.timeframe) {
-      case '1m':
-        timeframeInMinutes = 1;
-        break;
-      case '5m':
-        timeframeInMinutes = 5;
-        break;
-      case '15m':
-        timeframeInMinutes = 15;
-        break;
-      case '30m':
-        timeframeInMinutes = 30;
-        break;
-      case '1h':
-        timeframeInMinutes = 60;
-        break;
-      case '4h':
-        timeframeInMinutes = 240;
-        break;
-      case '1d':
-        timeframeInMinutes = 1440;
-        break;
-      case '1w':
-        timeframeInMinutes = 10080;
-        break;
-      default:
-        timeframeInMinutes = 60;
-    }
-    
-    // Calculate expected breakout time
-    const expectedBreakoutTime = new Date(createdAt.getTime() + (avgCandlesToBreakout * timeframeInMinutes * 60 * 1000));
-    
-    // Check if the expected breakout time is in the past
-    const isPast = expectedBreakoutTime < new Date();
-    
-    // Calculate hours past the expected breakout time
-    const hoursPast = isPast ? differenceInHours(new Date(), expectedBreakoutTime) : 0;
-    
-    // Check if the pattern is stale (more than 24 hours past expected breakout)
-    const isStale = hoursPast > 24;
-    
-    // Format date for display
-    const formattedDate = format(expectedBreakoutTime, 'MMM d, yyyy h:mm a');
-    
-    return { 
-      text: formattedDate,
-      isPast,
-      isStale,
-      hoursPast,
-      breakoutTime: expectedBreakoutTime
+    // Create a properly formatted object for BreakoutTimeService
+    const servicePattern: BreakoutServicePattern = {
+      createdAt: pattern.created_at,
+      timeframe: pattern.timeframe,
+      status: normalizedStatus
     };
-  };
-
-  // Using useMemo to prevent unnecessary recalculations
-  const breakoutInfo = useMemo(() => getExpectedBreakoutTime(), [pattern.created_at, pattern.timeframe, avgCandlesToBreakout]);
+    
+    return BreakoutTimeService.getBreakoutTimeInfo(
+      servicePattern, 
+      avgCandlesToBreakout
+    );
+  }, [pattern, avgCandlesToBreakout]);
 
   // Generate status label and color based on pattern status and breakout timing
   const getStatusInfo = () => {
@@ -162,8 +131,8 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     }
     
     // Check if breakout date is in the past
-    if (breakoutInfo.isPast) {
-      // If pattern is stale (more than 24 hours past expected breakout)
+    if (breakoutInfo.hoursPast > 0) {
+      // If pattern is stale
       if (breakoutInfo.isStale) {
         return {
           label: 'Expired',
@@ -216,9 +185,9 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
           </Typography>
           <Box display="flex" alignItems="center">
             <Chip 
-              icon={isBullish ? <TrendingUpIcon /> : <TrendingDownIcon />}
-              label={isBullish ? 'Bullish' : 'Bearish'}
-              color={isBullish ? 'success' : 'error'}
+              icon={direction === 'bullish' ? <TrendingUpIcon /> : <TrendingDownIcon />}
+              label={direction === 'bullish' ? 'Bullish' : 'Bearish'}
+              color={direction === 'bullish' ? 'success' : 'error'}
               size="small"
               sx={{ fontWeight: 'bold', mr: breakoutInfo.isStale || isOld ? 1 : 0 }}
             />
@@ -290,29 +259,32 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
           </Box>
         </Box>
         
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 2 }}>
           <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
               Stop Loss
             </Typography>
-            <Typography variant="body2" color="error.main">
+            <Typography variant="body1" fontWeight="bold" color="error.main">
               ${pattern.stop_loss ? formatPrice(pattern.stop_loss) : 'N/A'}
             </Typography>
           </Box>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+              Channel Type
+            </Typography>
+            <Typography variant="body1" fontWeight="bold">
+              {pattern.channel_type || 'N/A'}
+            </Typography>
+          </Box>
+        </Box>
+        
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
           <Box>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
               Profit %
             </Typography>
             <Typography variant="body2" color="success.main">
               +{potentialProfit.toFixed(1)}%
-            </Typography>
-          </Box>
-          <Box>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontWeight: 'bold' }}>
-              Channel
-            </Typography>
-            <Typography variant="body2">
-              {pattern.channel_type || 'N/A'}
             </Typography>
           </Box>
         </Box>
@@ -342,14 +314,14 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
             p: 1, 
             mb: 1, 
             bgcolor: breakoutInfo.isStale ? 'error.lightest' : 
-                     breakoutInfo.isPast ? 'warning.lightest' : 'info.lightest', 
+                     breakoutInfo.hoursPast > 0 ? 'warning.lightest' : 'info.lightest', 
             borderRadius: 1,
             border: 1,
             borderColor: breakoutInfo.isStale ? 'error.light' : 
-                         breakoutInfo.isPast ? 'warning.light' : 'info.light'
+                         breakoutInfo.hoursPast > 0 ? 'warning.light' : 'info.light'
           }}>
             <AccessTimeIcon 
-              color={breakoutInfo.isStale ? "error" : breakoutInfo.isPast ? "warning" : "info"} 
+              color={breakoutInfo.isStale ? "error" : breakoutInfo.hoursPast > 0 ? "warning" : "info"} 
               fontSize="small" 
               sx={{ mr: 0.5 }} 
             />
@@ -359,11 +331,11 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
               </Typography>
               <Typography 
                 variant="body2" 
-                color={breakoutInfo.isStale ? "error" : breakoutInfo.isPast ? "warning.main" : "info.main"}
+                color={breakoutInfo.isStale ? "error" : breakoutInfo.hoursPast > 0 ? "warning.main" : "info.main"}
               >
-                {breakoutInfo.text} 
-                {breakoutInfo.isStale && ' (Expired)'}
-                {breakoutInfo.isPast && !breakoutInfo.isStale && ' (Due)'}
+                {format(breakoutInfo.expectedBreakoutTime, 'MMM d, yyyy h:mm a')}
+                <br />
+                {BreakoutTimeService.getBreakoutDescription(breakoutInfo)}
               </Typography>
             </Box>
           </Box>
@@ -383,7 +355,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         >
           View Chart
         </Button>
-        {breakoutInfo.isStale || isOld ? (
+        {(breakoutInfo.isStale || isOld) ? (
           <Button 
             size="small" 
             color="warning" 

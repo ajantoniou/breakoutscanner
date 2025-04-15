@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Box, 
   Typography, 
@@ -19,16 +19,39 @@ import {
   FormControlLabel,
   Snackbar,
   IconButton,
-  Tooltip
+  Tooltip,
+  Menu,
+  ListItemIcon,
+  ListItemText,
+  Badge,
+  Popover,
+  Divider,
+  TextField
 } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PatternCard from './PatternCard';
-import { PatternData } from '@/services/types/patternTypes';
-import { BreakoutData } from '@/services/api/marketData/patternDetection/breakoutDetector';
 import { TIMEFRAMES } from '@/services/api/marketData/dataService';
 import { getAllowedTimeframes } from '@/services/api/marketData/stockUniverses';
 import { differenceInHours, differenceInDays } from 'date-fns';
+import SaveIcon from '@mui/icons-material/Save';
+import DeleteIcon from '@mui/icons-material/Delete';
+import TuneIcon from '@mui/icons-material/Tune';
+import BookmarkIcon from '@mui/icons-material/Bookmark';
+import PatternUpdateService, { 
+  PatternUpdateEventType, 
+  PatternUpdateEvent,
+  ConnectionStatus,
+  PatternUpdatedEvent,
+  NewPatternEvent,
+  StatusChangeEvent,
+  ConnectionStatusEvent
+} from '@/services/realtime/patternUpdateService';
+import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive';
+import SignalWifiStatusbar4BarIcon from '@mui/icons-material/SignalWifiStatusbar4Bar';
+import SignalWifiStatusbarConnectedNoInternet4Icon from '@mui/icons-material/SignalWifiStatusbarConnectedNoInternet4';
+import SignalWifiStatusbarNullIcon from '@mui/icons-material/SignalWifiStatusbarNull';
+import AddIcon from '@mui/icons-material/Add';
 
 // Define the tab panel interface
 interface TabPanelProps {
@@ -38,7 +61,7 @@ interface TabPanelProps {
 }
 
 // Define adapter interface for PatternCard props
-interface PatternCardData {
+interface PatternData {
   id: string;
   symbol: string;
   pattern_type: string;
@@ -52,8 +75,43 @@ interface PatternCardData {
   volume_confirmation?: boolean;
   trendline_break?: boolean;
   ema_pattern?: string;
-  status: string;
+  direction?: 'bullish' | 'bearish';
+  status?: 'active' | 'archived' | 'completed';
   risk_reward_ratio?: number;
+}
+
+interface BreakoutData extends PatternData {
+  breakout_confirmed: boolean;
+  breakout_time?: string;
+  actual_breakout_price?: number;
+}
+
+interface PatternCardData {
+  id: string;
+  symbol: string;
+  pattern_type: string;
+  timeframe: string;
+  entry_price: number;
+  target_price: number;
+  stop_loss?: number;
+  confidence_score: number;
+  created_at: string;
+  channel_type?: string;
+  volume_confirmation?: boolean;
+  trendline_break?: boolean;
+  ema_pattern?: boolean;
+  risk_reward_ratio?: number;
+  status?: 'active' | 'archived' | 'completed';
+}
+
+// Define filter preset interface
+interface FilterPreset {
+  id: string;
+  name: string;
+  confidenceFilter: number;
+  directionFilter: string;
+  hideExpired: boolean;
+  hideOld: boolean;
 }
 
 // Tab panel component
@@ -108,32 +166,66 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   const [directionFilter, setDirectionFilter] = useState<string>('all');
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('1h');
   const [hideExpired, setHideExpired] = useState<boolean>(true);
-  const [hideOld, setHideOld] = useState<boolean>(true);
+  const [hideOld, setHideOld] = useState<boolean>(false);
   
   // State for snackbar notifications
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState('');
   
-  // Adapter function to map data to PatternCard format
-  const adaptToPatternCardData = (pattern: PatternData | BreakoutData): PatternCardData => {
-    return {
-      id: pattern.id,
-      symbol: pattern.symbol,
-      pattern_type: pattern.patternType,
-      timeframe: pattern.timeframe,
-      entry_price: pattern.entryPrice,
-      target_price: pattern.targetPrice,
-      stop_loss: pattern.stopLoss,
-      confidence_score: pattern.confidenceScore,
-      created_at: pattern.createdAt,
-      channel_type: pattern.channelType || undefined,
-      volume_confirmation: pattern.volumeConfirmation || false,
-      trendline_break: pattern.trendlineBreak || false,
-      ema_pattern: pattern.emaPattern || undefined,
-      status: pattern.status,
-      risk_reward_ratio: pattern.riskRewardRatio || undefined
-    };
-  };
+  // State for filter presets
+  const [filterPresets, setFilterPresets] = useState<FilterPreset[]>([
+    {
+      id: 'high-confidence',
+      name: 'High Confidence',
+      confidenceFilter: 80,
+      directionFilter: 'all',
+      hideExpired: true,
+      hideOld: true
+    },
+    {
+      id: 'bullish-only',
+      name: 'Bullish Only',
+      confidenceFilter: 60,
+      directionFilter: 'bullish',
+      hideExpired: true,
+      hideOld: false
+    },
+    {
+      id: 'bearish-only',
+      name: 'Bearish Only',
+      confidenceFilter: 60,
+      directionFilter: 'bearish',
+      hideExpired: true,
+      hideOld: false
+    }
+  ]);
+  
+  // Preset menu state
+  const [presetMenuAnchorEl, setPresetMenuAnchorEl] = useState<null | HTMLElement>(null);
+  const [savePresetAnchorEl, setSavePresetAnchorEl] = useState<null | HTMLElement>(null);
+  const [newPresetName, setNewPresetName] = useState('');
+  
+  // State for real-time updates
+  const [realtimeEnabled, setRealtimeEnabled] = useState<boolean>(false);
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>(ConnectionStatus.DISCONNECTED);
+  const [lastUpdateTime, setLastUpdateTime] = useState<Date | null>(null);
+  const [notifications, setNotifications] = useState<PatternUpdateEvent[]>([]);
+  const [notificationOpen, setNotificationOpen] = useState<boolean>(false);
+  
+  // Local state for pattern data (for demo/development)
+  const [localDayPatterns, setLocalDayPatterns] = useState<PatternData[]>([]);
+  const [localSwingPatterns, setLocalSwingPatterns] = useState<PatternData[]>([]);
+  
+  // Combined patterns (props + local state)
+  const combinedDayPatterns = useMemo(() => 
+    [...dayTradingResults, ...localDayPatterns] as PatternData[], 
+    [dayTradingResults, localDayPatterns]
+  );
+  
+  const combinedSwingPatterns = useMemo(() => 
+    [...swingTradingResults, ...localSwingPatterns] as PatternData[],
+    [swingTradingResults, localSwingPatterns]
+  );
   
   // Get current scanner mode
   const getCurrentScannerMode = () => {
@@ -192,77 +284,59 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   const isPatternExpired = (pattern: PatternData | BreakoutData) => {
     if (!backtestStats.avgCandlesToBreakout[pattern.timeframe]) return false;
     
-    const createdAt = new Date(pattern.createdAt);
-    let timeframeInMinutes = 0;
+    const createdAt = new Date(pattern.created_at);
+    const timeframeInMinutes = (() => {
+      switch (pattern.timeframe) {
+        case '1m': return 1;
+        case '5m': return 5;
+        case '15m': return 15;
+        case '30m': return 30;
+        case '1h': return 60;
+        case '4h': return 240;
+        case '1d': return 1440;
+        default: return 0;
+      }
+    })();
     
-    // Convert timeframe to minutes
-    switch (pattern.timeframe) {
-      case '1m': timeframeInMinutes = 1; break;
-      case '5m': timeframeInMinutes = 5; break;
-      case '15m': timeframeInMinutes = 15; break;
-      case '30m': timeframeInMinutes = 30; break;
-      case '1h': timeframeInMinutes = 60; break;
-      case '4h': timeframeInMinutes = 240; break;
-      case '1d': timeframeInMinutes = 1440; break;
-      case '1w': timeframeInMinutes = 10080; break;
-      default: timeframeInMinutes = 60;
-    }
-    
-    // Calculate expected breakout time
     const avgCandlesToBreakout = backtestStats.avgCandlesToBreakout[pattern.timeframe];
-    const expectedBreakoutTime = new Date(createdAt.getTime() + (avgCandlesToBreakout * timeframeInMinutes * 60 * 1000));
+    const expectedBreakoutTime = new Date(pattern.created_at);
+    expectedBreakoutTime.setMinutes(expectedBreakoutTime.getMinutes() + (avgCandlesToBreakout * timeframeInMinutes));
     
-    // Check if more than 24 hours past expected breakout
     return differenceInHours(new Date(), expectedBreakoutTime) > 24 && expectedBreakoutTime < new Date();
   };
   
   // Function to check if a pattern is old (created > 7 days ago)
-  const isPatternOld = (pattern: PatternData | BreakoutData) => {
-    return differenceInDays(new Date(), new Date(pattern.createdAt)) > 7;
+  const isPatternOld = (pattern: PatternData) => {
+    const createdAt = new Date(pattern.created_at);
+    const now = new Date();
+    return now.getTime() - createdAt.getTime() > 7 * 24 * 60 * 60 * 1000;
   };
   
-  // Function to filter results
-  const filterResults = (results: (PatternData | BreakoutData)[]) => {
-    return results.filter(result => {
-      // Filter by confidence
-      if (result.confidenceScore < confidenceFilter) {
+  // Function to filter results based on current filters
+  const filterResults = (patterns: (PatternData | BreakoutData)[]) => {
+    return patterns.filter(pattern => {
+      // Apply confidence filter
+      if (confidenceFilter > 0 && pattern.confidence_score < confidenceFilter) return false;
+      
+      // Apply direction filter
+      if (directionFilter !== 'all' && pattern.direction && directionFilter !== pattern.direction) {
         return false;
       }
       
-      // Filter by direction
-      if (directionFilter !== 'all') {
-        const isBullish = result.patternType.includes('Bull') || 
-                        result.patternType.includes('Cup') || 
-                        result.patternType.includes('Bottom') ||
-                        result.patternType.includes('Ascending');
-        
-        const direction = isBullish ? 'bullish' : 'bearish';
-        if (direction !== directionFilter) {
-          return false;
-        }
-      }
+      // Apply expired filter
+      if (hideExpired && isPatternExpired(pattern)) return false;
       
-      // Filter expired patterns if hideExpired is true
-      if (hideExpired && isPatternExpired(result)) {
-        return false;
-      }
-      
-      // Filter old patterns if hideOld is true
-      if (hideOld && isPatternOld(result)) {
-        return false;
-      }
+      // Apply old filter
+      if (hideOld && isPatternOld(pattern)) return false;
       
       return true;
     });
   };
   
-  // Get filtered results for current tab
+  // Get current results based on active tab and filters
   const getCurrentResults = () => {
-    if (activeTab === 0) {
-      return filterResults(dayTradingResults);
-    } else {
-      return filterResults(swingTradingResults);
-    }
+    const results = activeTab === 0 ? combinedDayPatterns : combinedSwingPatterns;
+    return filterResults(results);
   };
   
   // Handle archiving a pattern
@@ -298,7 +372,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   };
   
   const countOldPatterns = (results: (PatternData | BreakoutData)[]) => {
-    return results.filter(pattern => isPatternOld(pattern)).length;
+    return results.filter(pattern => isPatternOld(pattern as PatternData)).length;
   };
   
   const expiredDayPatterns = countExpiredPatterns(dayTradingResults);
@@ -306,28 +380,575 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   const oldDayPatterns = countOldPatterns(dayTradingResults);
   const oldSwingPatterns = countOldPatterns(swingTradingResults);
   
+  // Handle preset menu open
+  const handlePresetMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setPresetMenuAnchorEl(event.currentTarget);
+  };
+  
+  // Handle preset menu close
+  const handlePresetMenuClose = () => {
+    setPresetMenuAnchorEl(null);
+  };
+  
+  // Handle save preset menu open
+  const handleSavePresetOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setSavePresetAnchorEl(event.currentTarget);
+    setNewPresetName(`${directionFilter !== 'all' ? directionFilter + ' ' : ''}${confidenceFilter > 0 ? confidenceFilter + '% ' : ''}Preset`);
+    handlePresetMenuClose();
+  };
+  
+  // Handle save preset menu close
+  const handleSavePresetClose = () => {
+    setSavePresetAnchorEl(null);
+  };
+  
+  // Handle applying a preset
+  const applyPreset = (preset: FilterPreset) => {
+    setConfidenceFilter(preset.confidenceFilter);
+    setDirectionFilter(preset.directionFilter);
+    setHideExpired(preset.hideExpired);
+    setHideOld(preset.hideOld);
+    handlePresetMenuClose();
+  };
+  
+  // Handle saving a new preset
+  const saveNewPreset = () => {
+    if (newPresetName.trim() === '') return;
+    
+    const newPreset: FilterPreset = {
+      id: `preset-${Date.now()}`,
+      name: newPresetName,
+      confidenceFilter,
+      directionFilter,
+      hideExpired,
+      hideOld
+    };
+    
+    setFilterPresets([...filterPresets, newPreset]);
+    handleSavePresetClose();
+  };
+  
+  // Handle deleting a preset
+  const deletePreset = (presetId: string) => {
+    setFilterPresets(filterPresets.filter(preset => preset.id !== presetId));
+  };
+  
+  // Get active filter count
+  const getActiveFilterCount = () => {
+    let count = 0;
+    if (confidenceFilter > 0) count++;
+    if (directionFilter !== 'all') count++;
+    if (hideExpired) count++;
+    if (hideOld) count++;
+    return count;
+  };
+  
+  // Get pattern update service
+  const patternUpdateService = useMemo(() => PatternUpdateService.getInstance(), []);
+  
+  // Handle toggle for real-time updates
+  const handleToggleRealtime = useCallback(() => {
+    if (realtimeEnabled) {
+      patternUpdateService.disconnect();
+      setRealtimeEnabled(false);
+    } else {
+      // For demo/development, use a mock WebSocket connection
+      // In production, this would be your actual WebSocket endpoint
+      patternUpdateService.connect('wss://api.breakoutscanner.com/ws');
+      setRealtimeEnabled(true);
+    }
+  }, [realtimeEnabled, patternUpdateService]);
+  
+  // Handle new pattern event
+  const handleNewPattern = useCallback((event: NewPatternEvent) => {
+    const pattern = event.payload;
+    const isScannerActive = activeTab === 0 ? 'day' : 'swing';
+    
+    // Add pattern to appropriate local state based on timeframe
+    if (isScannerActive === 'day' && ['1m', '5m', '15m', '30m', '1h'].includes(pattern.timeframe)) {
+      setLocalDayPatterns(prev => [pattern, ...prev]);
+    } else if (isScannerActive === 'swing' && ['4h', '1d', '1w'].includes(pattern.timeframe)) {
+      setLocalSwingPatterns(prev => [pattern, ...prev]);
+    }
+    
+    // Add notification
+    addNotification(event);
+    setLastUpdateTime(new Date());
+  }, [activeTab]);
+  
+  // Handle pattern update event
+  const handlePatternUpdate = useCallback((event: PatternUpdatedEvent) => {
+    const updatedPattern = event.payload;
+    
+    // Update pattern in local day trading results
+    setLocalDayPatterns(prev => 
+      prev.map(pattern => 
+        pattern.id === updatedPattern.id ? updatedPattern : pattern
+      )
+    );
+    
+    // Update pattern in local swing trading results
+    setLocalSwingPatterns(prev => 
+      prev.map(pattern => 
+        pattern.id === updatedPattern.id ? updatedPattern : pattern
+      )
+    );
+    
+    // Add notification
+    addNotification(event);
+    setLastUpdateTime(new Date());
+  }, []);
+  
+  // Handle status change event
+  const handleStatusChange = useCallback((event: StatusChangeEvent) => {
+    const { patternId, newStatus } = event.payload;
+    
+    // Update pattern status in local day trading results
+    setLocalDayPatterns(prev => 
+      prev.map(pattern => 
+        pattern.id === patternId ? { ...pattern, status: newStatus as any } : pattern
+      )
+    );
+    
+    // Update pattern status in local swing trading results
+    setLocalSwingPatterns(prev => 
+      prev.map(pattern => 
+        pattern.id === patternId ? { ...pattern, status: newStatus as any } : pattern
+      )
+    );
+    
+    // Add notification
+    addNotification(event);
+    setLastUpdateTime(new Date());
+  }, []);
+  
+  // Handle connection status change
+  const handleConnectionStatus = useCallback((event: ConnectionStatusEvent) => {
+    setConnectionStatus(event.payload.status);
+    
+    // Add notification for important connection events
+    if (
+      event.payload.status === ConnectionStatus.CONNECTED || 
+      event.payload.status === ConnectionStatus.ERROR
+    ) {
+      addNotification(event);
+    }
+  }, []);
+  
+  // Add notification to the list
+  const addNotification = useCallback((event: PatternUpdateEvent) => {
+    setNotifications(prev => [event, ...prev].slice(0, 20)); // Keep only the 20 most recent notifications
+  }, []);
+  
+  // Toggle notification panel
+  const toggleNotifications = useCallback(() => {
+    setNotificationOpen(prev => !prev);
+  }, []);
+  
+  // Get connection status icon
+  const getConnectionStatusIcon = useCallback(() => {
+    switch (connectionStatus) {
+      case ConnectionStatus.CONNECTED:
+        return <SignalWifiStatusbar4BarIcon color="success" />;
+      case ConnectionStatus.CONNECTING:
+        return <SignalWifiStatusbarNullIcon color="warning" />;
+      case ConnectionStatus.ERROR:
+        return <SignalWifiStatusbarConnectedNoInternet4Icon color="error" />;
+      case ConnectionStatus.DISCONNECTED:
+      default:
+        return <SignalWifiStatusbarNullIcon color="disabled" />;
+    }
+  }, [connectionStatus]);
+  
+  // Set up event listeners for real-time updates
+  useEffect(() => {
+    // Register event handlers
+    patternUpdateService.on(PatternUpdateEventType.NEW_PATTERN, handleNewPattern as any);
+    patternUpdateService.on(PatternUpdateEventType.PATTERN_UPDATED, handlePatternUpdate as any);
+    patternUpdateService.on(PatternUpdateEventType.STATUS_CHANGE, handleStatusChange as any);
+    patternUpdateService.on(PatternUpdateEventType.CONNECTION_STATUS, handleConnectionStatus as any);
+    
+    // Clean up event handlers
+    return () => {
+      patternUpdateService.off(PatternUpdateEventType.NEW_PATTERN, handleNewPattern as any);
+      patternUpdateService.off(PatternUpdateEventType.PATTERN_UPDATED, handlePatternUpdate as any);
+      patternUpdateService.off(PatternUpdateEventType.STATUS_CHANGE, handleStatusChange as any);
+      patternUpdateService.off(PatternUpdateEventType.CONNECTION_STATUS, handleConnectionStatus as any);
+      
+      // Disconnect when component unmounts
+      if (realtimeEnabled) {
+        patternUpdateService.disconnect();
+      }
+    };
+  }, [
+    patternUpdateService, 
+    handleNewPattern, 
+    handlePatternUpdate, 
+    handleStatusChange, 
+    handleConnectionStatus,
+    realtimeEnabled
+  ]);
+  
+  // Get formatted notification message
+  const getNotificationMessage = useCallback((event: PatternUpdateEvent): string => {
+    switch (event.type) {
+      case PatternUpdateEventType.NEW_PATTERN:
+        const newPattern = (event as NewPatternEvent).payload;
+        return `New ${newPattern.pattern_type} pattern detected for ${newPattern.symbol}`;
+      
+      case PatternUpdateEventType.PATTERN_UPDATED:
+        const updatedPattern = (event as PatternUpdatedEvent).payload;
+        return `${updatedPattern.symbol} pattern updated`;
+      
+      case PatternUpdateEventType.STATUS_CHANGE:
+        const statusChange = (event as StatusChangeEvent).payload;
+        return `Pattern status changed to ${statusChange.newStatus}`;
+      
+      case PatternUpdateEventType.CONNECTION_STATUS:
+        const connectionStatus = (event as ConnectionStatusEvent).payload;
+        return `Connection ${connectionStatus.status}${connectionStatus.message ? ': ' + connectionStatus.message : ''}`;
+      
+      default:
+        return 'Pattern update';
+    }
+  }, []);
+  
+  // Function to simulate a pattern update after a delay
+  const simulatePatternUpdate = useCallback((pattern: PatternData) => {
+    // Only simulate updates if real-time is enabled
+    if (!realtimeEnabled) return;
+    
+    // Schedule an update after a random delay
+    const delay = 5000 + Math.random() * 20000; // 5-25 seconds
+    
+    setTimeout(() => {
+      // Skip if real-time was turned off during the delay
+      if (!realtimeEnabled) return;
+      
+      // 50% chance to update price, 30% chance to change status, 20% chance for both
+      const updateType = Math.random();
+      let updatedPattern = { ...pattern };
+      
+      if (updateType < 0.5 || updateType > 0.8) {
+        // Update prices with small random changes
+        const priceChange = (Math.random() - 0.5) * 5; // -2.5 to +2.5
+        updatedPattern.entry_price = Math.max(0.01, pattern.entry_price + priceChange);
+        updatedPattern.target_price = Math.max(0.01, pattern.target_price + priceChange * 1.5);
+        if (pattern.stop_loss) {
+          updatedPattern.stop_loss = Math.max(0.01, pattern.stop_loss + priceChange * 0.8);
+        }
+      }
+      
+      if (updateType >= 0.5) {
+        // Small chance to change status
+        if (pattern.status === 'active' && Math.random() > 0.7) {
+          updatedPattern.status = Math.random() > 0.5 ? 'completed' : 'failed';
+        }
+      }
+      
+      // Create pattern update event
+      const mockEvent: PatternUpdatedEvent = {
+        type: PatternUpdateEventType.PATTERN_UPDATED,
+        payload: updatedPattern,
+        timestamp: Date.now()
+      };
+      
+      // Process the update
+      handlePatternUpdate(mockEvent);
+      
+      // Recursively schedule another update if the pattern is still active
+      if (updatedPattern.status === 'active') {
+        simulatePatternUpdate(updatedPattern);
+      }
+    }, delay);
+  }, [realtimeEnabled, handlePatternUpdate]);
+  
+  // Modify generateMockPattern to trigger simulated updates
+  const generateMockPattern = useCallback(() => {
+    // Only generate patterns if real-time is enabled
+    if (!realtimeEnabled) {
+      setSnackbarMessage('Enable real-time updates to generate demo patterns');
+      setSnackbarOpen(true);
+      return;
+    }
+    
+    // Random values for the pattern
+    const symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'AMD'];
+    const patternTypes = ['Bull Flag', 'Bear Flag', 'Ascending Triangle', 'Descending Triangle'];
+    const timeframes = activeTab === 0 ? ['15m', '30m', '1h'] : ['4h', '1d'];
+    const channelTypes = ['horizontal', 'ascending', 'descending'];
+    
+    // Generate random pattern
+    const mockPattern: PatternData = {
+      id: `mock-${Date.now()}`,
+      symbol: symbols[Math.floor(Math.random() * symbols.length)],
+      pattern_type: patternTypes[Math.floor(Math.random() * patternTypes.length)],
+      timeframe: timeframes[Math.floor(Math.random() * timeframes.length)],
+      entry_price: 100 + Math.random() * 200,
+      target_price: 120 + Math.random() * 200,
+      stop_loss: 90 + Math.random() * 180,
+      confidence_score: 60 + Math.floor(Math.random() * 40),
+      created_at: new Date().toISOString(),
+      channel_type: channelTypes[Math.floor(Math.random() * channelTypes.length)],
+      volume_confirmation: Math.random() > 0.5,
+      trendline_break: Math.random() > 0.5,
+      ema_pattern: Math.random() > 0.7 ? 'Golden Cross' : undefined,
+      direction: Math.random() > 0.5 ? 'bullish' : 'bearish',
+      status: 'active',
+      risk_reward_ratio: 1 + Math.random() * 3
+    };
+    
+    // Create an event
+    const mockEvent: NewPatternEvent = {
+      type: PatternUpdateEventType.NEW_PATTERN,
+      payload: mockPattern,
+      timestamp: Date.now()
+    };
+    
+    // Process the mock event
+    handleNewPattern(mockEvent);
+    
+    // Schedule simulated updates
+    simulatePatternUpdate(mockPattern);
+    
+    // Show notification
+    setSnackbarMessage(`Demo pattern for ${mockPattern.symbol} generated`);
+    setSnackbarOpen(true);
+  }, [activeTab, realtimeEnabled, handleNewPattern, simulatePatternUpdate]);
+  
+  // Add an effect to handle toggling real-time updates
+  useEffect(() => {
+    if (realtimeEnabled) {
+      // When real-time is enabled, schedule updates for all active patterns
+      const allPatterns = [...localDayPatterns, ...localSwingPatterns];
+      allPatterns.forEach(pattern => {
+        if (pattern.status === 'active') {
+          simulatePatternUpdate(pattern);
+        }
+      });
+    }
+  }, [realtimeEnabled, localDayPatterns, localSwingPatterns, simulatePatternUpdate]);
+  
   return (
     <Box sx={{ width: '100%' }}>
       <Paper elevation={3} sx={{ mb: 3 }}>
         <Tabs 
           value={activeTab} 
           onChange={handleTabChange} 
-          aria-label="scanner tabs"
+          aria-label="pattern scanner tabs"
           centered
         >
-          <Tab label={`Day Trading (${dayTradingResults.length})`} />
-          <Tab label={`Swing Trading (${swingTradingResults.length})`} />
+          <Tab label="Day Trading" />
+          <Tab label="Swing Trading" />
         </Tabs>
+        
+        {/* Add real-time updates control */}
+        <Box sx={{ 
+          position: 'absolute', 
+          right: 16, 
+          top: 8, 
+          display: 'flex', 
+          alignItems: 'center',
+          gap: 2
+        }}>
+          <Tooltip title="Generate demo pattern">
+            <span>
+              <IconButton 
+                color="primary" 
+                onClick={generateMockPattern}
+                size="small"
+                disabled={!realtimeEnabled}
+              >
+                <AddIcon />
+              </IconButton>
+            </span>
+          </Tooltip>
+          
+          <Tooltip title={`${notifications.length} notifications`}>
+            <IconButton 
+              color={notifications.length > 0 ? 'primary' : 'default'} 
+              onClick={toggleNotifications}
+              size="small"
+            >
+              <Badge badgeContent={notifications.length} color="primary">
+                <NotificationsActiveIcon />
+              </Badge>
+            </IconButton>
+          </Tooltip>
+          
+          <Tooltip title={`Real-time updates: ${realtimeEnabled ? 'On' : 'Off'}`}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              {getConnectionStatusIcon()}
+              <Switch
+                checked={realtimeEnabled}
+                onChange={handleToggleRealtime}
+                color="primary"
+                size="small"
+              />
+            </Box>
+          </Tooltip>
+        </Box>
       </Paper>
+      
+      {/* Notifications panel */}
+      <Popover
+        open={notificationOpen}
+        anchorEl={document.getElementById('root')}
+        onClose={() => setNotificationOpen(false)}
+        anchorOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        sx={{ mt: 10, mr: 2 }}
+      >
+        <Box sx={{ width: 350, maxHeight: 400, overflow: 'auto', p: 2 }}>
+          <Typography variant="h6" gutterBottom>
+            Notifications
+            <IconButton 
+              size="small" 
+              sx={{ float: 'right' }} 
+              onClick={() => setNotifications([])}
+            >
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Typography>
+          
+          {notifications.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+              No notifications
+            </Typography>
+          ) : (
+            notifications.map((notification, index) => (
+              <Box 
+                key={index} 
+                sx={{ 
+                  py: 1, 
+                  borderBottom: index < notifications.length - 1 ? '1px solid' : 'none',
+                  borderColor: 'divider'
+                }}
+              >
+                <Typography variant="body2">
+                  {getNotificationMessage(notification)}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {new Date(notification.timestamp).toLocaleTimeString()}
+                </Typography>
+              </Box>
+            ))
+          )}
+        </Box>
+      </Popover>
       
       <Box sx={{ mb: 3 }}>
         <Paper elevation={2} sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center' }}>
-            <FilterAltIcon sx={{ mr: 1 }} /> Filters
-          </Typography>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', mb: 0 }}>
+              <TuneIcon sx={{ mr: 1 }} /> 
+              <span>Filters</span>
+              {getActiveFilterCount() > 0 && (
+                <Badge
+                  badgeContent={getActiveFilterCount()}
+                  color="primary"
+                  sx={{ ml: 1 }}
+                >
+                  <Box />
+                </Badge>
+              )}
+            </Typography>
+            
+            <Box>
+              <Tooltip title="Filter presets">
+                <Button
+                  variant="outlined"
+                  size="small"
+                  startIcon={<BookmarkIcon />}
+                  onClick={handlePresetMenuOpen}
+                >
+                  Presets
+                </Button>
+              </Tooltip>
+              
+              <Menu
+                anchorEl={presetMenuAnchorEl}
+                open={Boolean(presetMenuAnchorEl)}
+                onClose={handlePresetMenuClose}
+              >
+                {filterPresets.map(preset => (
+                  <MenuItem key={preset.id} onClick={() => applyPreset(preset)}>
+                    <ListItemText primary={preset.name} />
+                    <IconButton size="small" edge="end" onClick={(e) => {
+                      e.stopPropagation();
+                      deletePreset(preset.id);
+                    }}>
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </MenuItem>
+                ))}
+                <Divider />
+                <MenuItem onClick={handleSavePresetOpen}>
+                  <ListItemIcon>
+                    <SaveIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText primary="Save current filters" />
+                </MenuItem>
+              </Menu>
+              
+              <Tooltip title="Save Filter Preset">
+                <Popover
+                  open={Boolean(savePresetAnchorEl)}
+                  anchorEl={savePresetAnchorEl}
+                  onClose={handleSavePresetClose}
+                  anchorOrigin={{
+                    vertical: 'bottom',
+                    horizontal: 'right',
+                  }}
+                  transformOrigin={{
+                    vertical: 'top',
+                    horizontal: 'right',
+                  }}
+                >
+                  <Box sx={{ p: 2, width: 300 }}>
+                    <Typography variant="subtitle1" gutterBottom>
+                      Save Filter Preset
+                    </Typography>
+                    <TextField
+                      fullWidth
+                      label="Preset Name"
+                      value={newPresetName}
+                      onChange={(e) => setNewPresetName(e.target.value)}
+                      margin="normal"
+                      size="small"
+                      autoFocus
+                    />
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
+                      <Button onClick={handleSavePresetClose} sx={{ mr: 1 }}>
+                        Cancel
+                      </Button>
+                      <Button 
+                        variant="contained" 
+                        color="primary" 
+                        onClick={saveNewPreset}
+                        disabled={newPresetName.trim() === ''}
+                      >
+                        Save
+                      </Button>
+                    </Box>
+                  </Box>
+                </Popover>
+              </Tooltip>
+            </Box>
+          </Box>
           
-          <Grid container spacing={2} alignItems="center">
-            <Grid item xs={12} sm={6} md={3}>
+          <Box sx={{ 
+            display: 'grid', 
+            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, 
+            gap: 2 
+          }}>
+            <Box>
               <FormControl fullWidth>
                 <InputLabel id="confidence-filter-label">Min Confidence</InputLabel>
                 <Select
@@ -344,9 +965,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
                   <MenuItem value={90}>90%+</MenuItem>
                 </Select>
               </FormControl>
-            </Grid>
+            </Box>
             
-            <Grid item xs={12} sm={6} md={3}>
+            <Box>
               <FormControl fullWidth>
                 <InputLabel id="direction-filter-label">Direction</InputLabel>
                 <Select
@@ -361,9 +982,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
                   <MenuItem value="bearish">Bearish</MenuItem>
                 </Select>
               </FormControl>
-            </Grid>
+            </Box>
             
-            <Grid item xs={12} sm={6} md={3}>
+            <Box>
               <FormControl fullWidth>
                 <InputLabel id="timeframe-label">Timeframe</InputLabel>
                 <Select
@@ -378,9 +999,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
                   ))}
                 </Select>
               </FormControl>
-            </Grid>
+            </Box>
             
-            <Grid item xs={12} sm={6} md={3}>
+            <Box>
               <Button 
                 variant="contained" 
                 color="primary" 
@@ -391,9 +1012,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
               >
                 {isLoading && activeScanner === currentMode ? 'Scanning...' : 'Run Scanner'}
               </Button>
-            </Grid>
+            </Box>
             
-            <Grid item xs={12} sm={6} md={6}>
+            <Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / 3', md: '1 / 3' } }}>
               <Box sx={{ display: 'flex', gap: 2 }}>
                 <FormControlLabel
                   control={
@@ -439,8 +1060,70 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
                   }
                 />
               </Box>
-            </Grid>
-          </Grid>
+            </Box>
+          </Box>
+          
+          {getActiveFilterCount() > 0 && (
+            <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              {confidenceFilter > 0 && (
+                <Chip 
+                  label={`Confidence: ${confidenceFilter}%+`} 
+                  color="primary" 
+                  onDelete={() => setConfidenceFilter(0)}
+                  size="small"
+                />
+              )}
+              
+              {directionFilter !== 'all' && (
+                <Chip 
+                  label={`Direction: ${directionFilter}`} 
+                  color="primary" 
+                  onDelete={() => setDirectionFilter('all')}
+                  size="small"
+                />
+              )}
+              
+              {hideExpired && (
+                <Chip 
+                  label="Hide Expired" 
+                  color="warning" 
+                  onDelete={() => setHideExpired(false)}
+                  size="small"
+                />
+              )}
+              
+              {hideOld && (
+                <Chip 
+                  label="Hide Old" 
+                  color="info" 
+                  onDelete={() => setHideOld(false)}
+                  size="small"
+                />
+              )}
+              
+              {getActiveFilterCount() > 1 && (
+                <Chip 
+                  label="Clear All" 
+                  variant="outlined"
+                  onClick={() => {
+                    setConfidenceFilter(0);
+                    setDirectionFilter('all');
+                    setHideExpired(false);
+                    setHideOld(false);
+                  }}
+                  size="small"
+                />
+              )}
+            </Box>
+          )}
+          
+          {lastUpdateTime && (
+            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+              <Typography variant="caption" color="text.secondary">
+                Last update: {lastUpdateTime.toLocaleTimeString()}
+              </Typography>
+            </Box>
+          )}
         </Paper>
       </Box>
       
@@ -449,38 +1132,32 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
           <Typography variant="h6" gutterBottom>
             Backtest Stats for {selectedTimeframe}
           </Typography>
-          <Grid container spacing={2}>
-            <Grid item xs={4}>
-              <Box sx={{ textAlign: 'center', p: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Avg Candles to Breakout
-                </Typography>
-                <Typography variant="h6">
-                  {avgCandlesToBreakout.toFixed(1)}
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={4}>
-              <Box sx={{ textAlign: 'center', p: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Win Rate
-                </Typography>
-                <Typography variant="h6">
-                  {(winRate * 100).toFixed(1)}%
-                </Typography>
-              </Box>
-            </Grid>
-            <Grid item xs={4}>
-              <Box sx={{ textAlign: 'center', p: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Profit Factor
-                </Typography>
-                <Typography variant="h6">
-                  {profitFactor.toFixed(2)}
-                </Typography>
-              </Box>
-            </Grid>
-          </Grid>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2 }}>
+            <Box sx={{ textAlign: 'center', p: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Avg Candles to Breakout
+              </Typography>
+              <Typography variant="h6">
+                {avgCandlesToBreakout.toFixed(1)}
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center', p: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Win Rate
+              </Typography>
+              <Typography variant="h6">
+                {(winRate * 100).toFixed(1)}%
+              </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'center', p: 1 }}>
+              <Typography variant="body2" color="text.secondary">
+                Profit Factor
+              </Typography>
+              <Typography variant="h6">
+                {profitFactor.toFixed(2)}
+              </Typography>
+            </Box>
+          </Box>
         </Paper>
       </Box>
       
@@ -521,17 +1198,45 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
               )}
             </Stack>
             
-            <Grid container spacing={3}>
-              {currentResults.map((pattern, index) => (
-                <Grid item xs={12} md={6} lg={4} key={index}>
-                  <PatternCard 
-                    pattern={adaptToPatternCardData(pattern)}
-                    avgCandlesToBreakout={backtestStats.avgCandlesToBreakout[pattern.timeframe]}
-                    onArchive={handleArchivePattern}
-                  />
-                </Grid>
-              ))}
-            </Grid>
+            <Box sx={{ flexGrow: 1 }}>
+              <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: { 
+                  xs: '1fr', 
+                  sm: 'repeat(auto-fill, minmax(300px, 1fr))', 
+                  md: 'repeat(auto-fill, minmax(350px, 1fr))', 
+                  lg: 'repeat(auto-fill, minmax(400px, 1fr))' 
+                }, 
+                gap: 3 
+              }}>
+                {currentResults.map((pattern, index) => (
+                  <Box key={pattern.id || index}>
+                    <PatternCard 
+                      pattern={{
+                        id: pattern.id,
+                        symbol: pattern.symbol,
+                        pattern_type: pattern.pattern_type,
+                        timeframe: pattern.timeframe,
+                        entry_price: pattern.entry_price,
+                        target_price: pattern.target_price,
+                        stop_loss: pattern.stop_loss,
+                        confidence_score: pattern.confidence_score,
+                        created_at: pattern.created_at,
+                        channel_type: pattern.channel_type,
+                        volume_confirmation: pattern.volume_confirmation,
+                        trendline_break: pattern.trendline_break,
+                        ema_pattern: pattern.ema_pattern as string,
+                        status: pattern.status || 'active',
+                        risk_reward_ratio: pattern.risk_reward_ratio,
+                        direction: pattern.direction || (pattern.pattern_type?.toLowerCase().includes('bull') ? 'bullish' : 'bearish')
+                      }} 
+                      avgCandlesToBreakout={backtestStats.avgCandlesToBreakout[pattern.timeframe]}
+                      onArchive={onArchivePattern ? () => handleArchivePattern(pattern.id) : undefined}
+                    />
+                  </Box>
+                ))}
+              </Box>
+            </Box>
           </>
         )}
       </TabPanel>
@@ -573,17 +1278,45 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
               )}
             </Stack>
             
-            <Grid container spacing={3}>
-              {currentResults.map((pattern, index) => (
-                <Grid item xs={12} md={6} lg={4} key={index}>
-                  <PatternCard 
-                    pattern={adaptToPatternCardData(pattern)}
-                    avgCandlesToBreakout={backtestStats.avgCandlesToBreakout[pattern.timeframe]}
-                    onArchive={handleArchivePattern}
-                  />
-                </Grid>
-              ))}
-            </Grid>
+            <Box sx={{ flexGrow: 1 }}>
+              <Box sx={{ 
+                display: 'grid', 
+                gridTemplateColumns: { 
+                  xs: '1fr', 
+                  sm: 'repeat(auto-fill, minmax(300px, 1fr))', 
+                  md: 'repeat(auto-fill, minmax(350px, 1fr))', 
+                  lg: 'repeat(auto-fill, minmax(400px, 1fr))' 
+                }, 
+                gap: 3 
+              }}>
+                {currentResults.map((pattern, index) => (
+                  <Box key={pattern.id || index}>
+                    <PatternCard 
+                      pattern={{
+                        id: pattern.id,
+                        symbol: pattern.symbol,
+                        pattern_type: pattern.pattern_type,
+                        timeframe: pattern.timeframe,
+                        entry_price: pattern.entry_price,
+                        target_price: pattern.target_price,
+                        stop_loss: pattern.stop_loss,
+                        confidence_score: pattern.confidence_score,
+                        created_at: pattern.created_at,
+                        channel_type: pattern.channel_type,
+                        volume_confirmation: pattern.volume_confirmation,
+                        trendline_break: pattern.trendline_break,
+                        ema_pattern: pattern.ema_pattern as string,
+                        status: pattern.status || 'active',
+                        risk_reward_ratio: pattern.risk_reward_ratio,
+                        direction: pattern.direction || (pattern.pattern_type?.toLowerCase().includes('bull') ? 'bullish' : 'bearish')
+                      }} 
+                      avgCandlesToBreakout={backtestStats.avgCandlesToBreakout[pattern.timeframe]}
+                      onArchive={onArchivePattern ? () => handleArchivePattern(pattern.id) : undefined}
+                    />
+                  </Box>
+                ))}
+              </Box>
+            </Box>
           </>
         )}
       </TabPanel>
