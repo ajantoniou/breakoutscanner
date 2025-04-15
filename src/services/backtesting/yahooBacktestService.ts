@@ -1,8 +1,10 @@
 import { PatternData } from '@/services/types/patternTypes';
-import { BacktestResult } from '@/services/types/backtestTypes';
+import { BacktestResult, BacktestAnalyticsData } from '@/services/types/backtestTypes';
 import { yahooApiService } from '@/services/api/yahoo/yahooApiService';
 import { ensureDateString } from '@/utils/dateUtils';
 import { stockUniverses } from '@/services/api/marketData/stockUniverses';
+import axios from 'axios';
+import { format, addDays, subDays, differenceInDays, parseISO } from 'date-fns';
 
 /**
  * Run backtest on patterns using real historical data from Yahoo Finance
@@ -335,59 +337,130 @@ export const backtestPatternsWithYahoo = async (
 /**
  * Get comprehensive backtest statistics
  */
-export const getBacktestStatistics = (
-  backtestResults: BacktestResult[]
-): Record<string, any> => {
-  const timeframes = ['15m', '30m', '1h', '4h', '1d', '1w'];
-  
-  const statistics: Record<string, any> = {
-    overall: {
-      totalTrades: backtestResults.length,
-      successfulTrades: backtestResults.filter(result => result.successful).length,
+export const getBacktestStatistics = (results: BacktestResult[]): BacktestAnalyticsData => {
+  if (!results || results.length === 0) {
+    return {
       winRate: 0,
       profitFactor: 0,
-      averageProfitLoss: 0,
-      averageCandlesToBreakout: 0
-    },
-    byTimeframe: {}
-  };
-  
-  // Calculate overall win rate
-  statistics.overall.winRate = statistics.overall.totalTrades > 0 ?
-    (statistics.overall.successfulTrades / statistics.overall.totalTrades) * 100 : 0;
-  
-  // Calculate overall profit factor
-  const grossProfit = backtestResults
-    .filter(result => result.profitLoss > 0)
-    .reduce((total, result) => total + result.profitLoss, 0);
-  
-  const grossLoss = Math.abs(backtestResults
-    .filter(result => result.profitLoss < 0)
-    .reduce((total, result) => total + result.profitLoss, 0));
-  
-  statistics.overall.profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? 999 : 0);
-  
-  // Calculate overall average profit/loss
-  statistics.overall.averageProfitLoss = backtestResults.length > 0 ?
-    backtestResults.reduce((total, result) => total + result.profitLossPercent, 0) / backtestResults.length : 0;
-  
-  // Calculate overall average candles to breakout
-  const successfulResults = backtestResults.filter(result => result.successful);
-  statistics.overall.averageCandlesToBreakout = successfulResults.length > 0 ?
-    successfulResults.reduce((total, result) => total + result.candlesToBreakout, 0) / successfulResults.length : 0;
-  
-  // Calculate statistics by timeframe
-  for (const timeframe of timeframes) {
-    statistics.byTimeframe[timeframe] = {
-      totalTrades: backtestResults.filter(result => result.timeframe === timeframe).length,
-      successfulTrades: backtestResults.filter(result => result.timeframe === timeframe && result.successful).length,
-      winRate: calculateWinRate(backtestResults, timeframe),
-      profitFactor: calculateProfitFactor(backtestResults, timeframe),
-      averageCandlesToBreakout: calculateAverageCandlesToBreakout(backtestResults, timeframe)
+      averageRMultiple: 0,
+      expectancy: 0,
+      totalTrades: 0,
+      totalWins: 0,
+      totalLosses: 0,
+      pendingTrades: 0,
+      totalProfitLossPercent: 0,
+      averageWinPercent: 0,
+      averageLossPercent: 0,
+      winLossRatio: 0,
+      bestPattern: null,
+      bestPatternWinRate: null,
+      bestTimeframe: null,
+      averageDaysHeld: null
     };
   }
+
+  // Count wins, losses and pending
+  const completedResults = results.filter(r => r.result !== 'pending');
+  const wins = completedResults.filter(r => r.result === 'win');
+  const losses = completedResults.filter(r => r.result === 'loss');
+  const pending = results.filter(r => r.result === 'pending');
   
-  return statistics;
+  // Calculate profit metrics
+  const grossProfit = wins.reduce((sum, r) => sum + (r.profit_loss_percent || 0), 0);
+  const grossLoss = Math.abs(losses.reduce((sum, r) => sum + (r.profit_loss_percent || 0), 0));
+  
+  // Calculate R multiples
+  const totalRMultiple = completedResults.reduce((sum, r) => sum + (r.r_multiple || 0), 0);
+  
+  // Calculate days held (if exit_date is available)
+  let totalDaysHeld = 0;
+  let tradesWithDaysHeld = 0;
+  
+  completedResults.forEach(result => {
+    if (result.entry_date && result.exit_date) {
+      const daysHeld = differenceInDays(
+        new Date(result.exit_date),
+        new Date(result.entry_date)
+      );
+      totalDaysHeld += daysHeld;
+      tradesWithDaysHeld++;
+    }
+  });
+  
+  // Group by pattern type to find best pattern
+  const patternPerformance: Record<string, { wins: number, trades: number }> = {};
+  const timeframePerformance: Record<string, { wins: number, trades: number }> = {};
+  
+  results.forEach(result => {
+    // Track pattern performance
+    if (!patternPerformance[result.pattern_type]) {
+      patternPerformance[result.pattern_type] = { wins: 0, trades: 0 };
+    }
+    patternPerformance[result.pattern_type].trades++;
+    if (result.result === 'win') {
+      patternPerformance[result.pattern_type].wins++;
+    }
+    
+    // Track timeframe performance
+    if (!timeframePerformance[result.timeframe]) {
+      timeframePerformance[result.timeframe] = { wins: 0, trades: 0 };
+    }
+    timeframePerformance[result.timeframe].trades++;
+    if (result.result === 'win') {
+      timeframePerformance[result.timeframe].wins++;
+    }
+  });
+  
+  // Find best pattern
+  let bestPattern = null;
+  let bestPatternWinRate = 0;
+  Object.entries(patternPerformance).forEach(([pattern, stats]) => {
+    if (stats.trades >= 5) { // Minimum sample size
+      const winRate = stats.wins / stats.trades;
+      if (winRate > bestPatternWinRate) {
+        bestPatternWinRate = winRate;
+        bestPattern = pattern;
+      }
+    }
+  });
+  
+  // Find best timeframe
+  let bestTimeframe = null;
+  let bestTimeframeWinRate = 0;
+  Object.entries(timeframePerformance).forEach(([timeframe, stats]) => {
+    if (stats.trades >= 5) { // Minimum sample size
+      const winRate = stats.wins / stats.trades;
+      if (winRate > bestTimeframeWinRate) {
+        bestTimeframeWinRate = winRate;
+        bestTimeframe = timeframe;
+      }
+    }
+  });
+  
+  // Return statistics in the expected format
+  return {
+    winRate: completedResults.length > 0 ? wins.length / completedResults.length : 0,
+    profitFactor: grossLoss > 0 ? grossProfit / grossLoss : 0,
+    averageRMultiple: completedResults.length > 0 ? totalRMultiple / completedResults.length : 0,
+    expectancy: completedResults.length > 0 ? 
+      (wins.length / completedResults.length) * (grossProfit / wins.length) - 
+      (losses.length / completedResults.length) * (grossLoss / losses.length) : 0,
+    
+    totalTrades: results.length,
+    totalWins: wins.length,
+    totalLosses: losses.length,
+    pendingTrades: pending.length,
+    
+    totalProfitLossPercent: completedResults.reduce((sum, r) => sum + (r.profit_loss_percent || 0), 0),
+    averageWinPercent: wins.length > 0 ? grossProfit / wins.length : 0,
+    averageLossPercent: losses.length > 0 ? -grossLoss / losses.length : 0,
+    winLossRatio: losses.length > 0 ? wins.length / losses.length : 0,
+    
+    bestPattern,
+    bestPatternWinRate: bestPattern ? patternPerformance[bestPattern].wins / patternPerformance[bestPattern].trades : null,
+    bestTimeframe,
+    averageDaysHeld: tradesWithDaysHeld > 0 ? totalDaysHeld / tradesWithDaysHeld : null
+  };
 };
 
 export default {

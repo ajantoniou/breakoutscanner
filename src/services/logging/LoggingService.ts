@@ -16,7 +16,8 @@ export enum LogCategory {
   REALTIME = 'realtime',
   PERFORMANCE = 'performance',
   SECURITY = 'security',
-  SYSTEM = 'system'
+  SYSTEM = 'system',
+  WEBSOCKET = 'websocket'
 }
 
 export interface LogEntry {

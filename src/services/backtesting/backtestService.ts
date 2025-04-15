@@ -6,6 +6,17 @@ import { ensureBacktestDirection } from '@/utils/typeSafetyHelpers';
 import { processPolygonDataForBacktest } from '@/services/api/marketData/polygon/dataTransformer';
 import { stockUniverses } from '@/services/api/marketData/stockUniverses';
 import { backtestPatternsWithPolygon } from './polygonBacktestService';
+import { supabaseClient } from '../supabase/supabaseClient';
+import { 
+  BacktestFilter, 
+  BacktestStatistics,
+  BacktestAnalyticsResponse,
+  BacktestPatternPerformance,
+  BacktestTimeframePerformance,
+  BacktestSymbolPerformance,
+  BacktestHistoricalPerformance,
+  BacktestPerformanceTrend
+} from '../types/backtestTypes';
 
 // Create an instance of MarketDataService
 const marketDataService = new MarketDataService();
@@ -288,4 +299,568 @@ export const backtestPatterns = async (
   isPremium?: boolean
 ): Promise<BacktestResult[]> => {
   return runBacktest(patterns, isPremium ? 2 : 1, apiKey);
+};
+
+/**
+ * Fetch backtest results from Supabase with optional filtering
+ */
+export const fetchBacktestResults = async (
+  filters: BacktestFilter = {},
+  page = 0,
+  limit = 50
+): Promise<{ results: BacktestResult[]; total: number }> => {
+  let query = supabaseClient
+    .from('backtest_results')
+    .select('*', { count: 'exact' });
+
+  // Apply filters
+  if (filters.symbol) {
+    query = query.ilike('symbol', `%${filters.symbol}%`);
+  }
+  if (filters.patternType) {
+    query = query.eq('pattern_type', filters.patternType);
+  }
+  if (filters.direction) {
+    query = query.eq('direction', filters.direction);
+  }
+  if (filters.timeframe) {
+    query = query.eq('timeframe', filters.timeframe);
+  }
+  if (filters.minConfidence !== undefined) {
+    query = query.gte('confidence_score', filters.minConfidence);
+  }
+  if (filters.maxConfidence !== undefined) {
+    query = query.lte('confidence_score', filters.maxConfidence);
+  }
+  if (filters.dateStart) {
+    query = query.gte('entry_date', new Date(filters.dateStart).toISOString());
+  }
+  if (filters.dateEnd) {
+    query = query.lte('entry_date', new Date(filters.dateEnd).toISOString());
+  }
+  if (filters.result) {
+    query = query.eq('result', filters.result);
+  }
+  if (filters.minProfitPercentage !== undefined) {
+    query = query.gte('profit_percentage', filters.minProfitPercentage);
+  }
+  if (filters.maxProfitPercentage !== undefined) {
+    query = query.lte('profit_percentage', filters.maxProfitPercentage);
+  }
+
+  // Pagination
+  const { data, error, count } = await query
+    .order('entry_date', { ascending: false })
+    .range(page * limit, (page + 1) * limit - 1);
+
+  if (error) {
+    console.error('Error fetching backtest results:', error);
+    throw error;
+  }
+
+  return {
+    results: data as BacktestResult[],
+    total: count || 0
+  };
+};
+
+/**
+ * Fetch backtest statistics
+ */
+export const fetchBacktestStatistics = async (
+  filters: BacktestFilter = {}
+): Promise<BacktestStatistics> => {
+  // First get filtered results to calculate statistics
+  const { results } = await fetchBacktestResults(filters, 0, 1000);
+  
+  if (results.length === 0) {
+    return {
+      totalTrades: 0,
+      winRate: 0,
+      profitFactor: 0,
+      averageWin: 0,
+      averageLoss: 0,
+      largestWin: 0,
+      largestLoss: 0,
+      expectancy: 0,
+      maxDrawdown: 0,
+      averageDaysInTrade: 0,
+      averageRMultiple: 0,
+      consecutiveWins: 0,
+      consecutiveLosses: 0
+    };
+  }
+
+  // Calculate statistics
+  const wins = results.filter(r => r.result === 'win');
+  const losses = results.filter(r => r.result === 'loss');
+  
+  const winRate = wins.length / results.length;
+  
+  const totalProfit = wins.reduce((sum, trade) => sum + trade.profit_percentage, 0);
+  const totalLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.profit_percentage, 0));
+  
+  const profitFactor = totalLoss === 0 ? totalProfit : totalProfit / totalLoss;
+  
+  const averageWin = wins.length > 0 ? totalProfit / wins.length : 0;
+  const averageLoss = losses.length > 0 ? totalLoss / losses.length : 0;
+  
+  const largestWin = wins.length > 0 ? Math.max(...wins.map(w => w.profit_percentage)) : 0;
+  const largestLoss = losses.length > 0 ? Math.min(...losses.map(l => l.profit_percentage)) : 0;
+  
+  const expectancy = (winRate * averageWin) - ((1 - winRate) * averageLoss);
+
+  // Calculate max drawdown using equity curve
+  const equityCurve = calculateEquityCurve(results);
+  const maxDrawdown = calculateMaxDrawdown(equityCurve);
+
+  // Calculate average days in trade
+  const completedTrades = results.filter(r => r.result !== 'pending' && r.exit_date);
+  const totalDays = completedTrades.reduce((sum, trade) => {
+    const entryDate = new Date(trade.entry_date);
+    const exitDate = new Date(trade.exit_date as string);
+    const days = Math.floor((exitDate.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+    return sum + days;
+  }, 0);
+  const averageDaysInTrade = completedTrades.length > 0 ? totalDays / completedTrades.length : 0;
+
+  // Calculate average R multiple
+  const averageRMultiple = results.reduce((sum, trade) => sum + trade.r_multiple, 0) / results.length;
+
+  // Calculate consecutive wins/losses
+  let maxConsecutiveWins = 0;
+  let maxConsecutiveLosses = 0;
+  let currentConsecutiveWins = 0;
+  let currentConsecutiveLosses = 0;
+
+  // Sort by entry date
+  const sortedResults = [...results].sort((a, b) => 
+    new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime()
+  );
+
+  for (const trade of sortedResults) {
+    if (trade.result === 'win') {
+      currentConsecutiveWins++;
+      currentConsecutiveLosses = 0;
+      if (currentConsecutiveWins > maxConsecutiveWins) {
+        maxConsecutiveWins = currentConsecutiveWins;
+      }
+    } else if (trade.result === 'loss') {
+      currentConsecutiveLosses++;
+      currentConsecutiveWins = 0;
+      if (currentConsecutiveLosses > maxConsecutiveLosses) {
+        maxConsecutiveLosses = currentConsecutiveLosses;
+      }
+    }
+  }
+
+  return {
+    totalTrades: results.length,
+    winRate,
+    profitFactor,
+    averageWin,
+    averageLoss,
+    largestWin,
+    largestLoss,
+    expectancy,
+    maxDrawdown,
+    averageDaysInTrade,
+    averageRMultiple,
+    consecutiveWins: maxConsecutiveWins,
+    consecutiveLosses: maxConsecutiveLosses
+  };
+};
+
+/**
+ * Fetch comprehensive backtest analytics
+ */
+export const fetchBacktestAnalytics = async (
+  filters: BacktestFilter = {}
+): Promise<BacktestAnalyticsResponse> => {
+  const { results } = await fetchBacktestResults(filters, 0, 1000);
+  const statistics = await fetchBacktestStatistics(filters);
+  
+  // Calculate historical performance (equity curve)
+  const historicalPerformance = calculateHistoricalPerformance(results);
+  
+  // Calculate pattern performance
+  const patternPerformance = calculatePatternPerformance(results);
+  
+  // Calculate timeframe performance
+  const timeframePerformance = calculateTimeframePerformance(results);
+  
+  // Calculate symbol performance
+  const symbolPerformance = calculateSymbolPerformance(results);
+  
+  // Calculate performance trend by month
+  const performanceTrend = calculatePerformanceTrend(results);
+  
+  return {
+    results,
+    statistics,
+    historicalPerformance,
+    patternPerformance,
+    timeframePerformance,
+    symbolPerformance,
+    performanceTrend
+  };
+};
+
+/**
+ * Helper function to calculate equity curve from trades
+ */
+const calculateEquityCurve = (results: BacktestResult[]): { date: string; equity: number }[] => {
+  // Sort by entry date
+  const sortedResults = [...results].sort((a, b) => 
+    new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime()
+  );
+  
+  let equity = 100; // Start with 100 units
+  const equityCurve: { date: string; equity: number }[] = [];
+  
+  // Add initial point
+  if (sortedResults.length > 0) {
+    equityCurve.push({
+      date: sortedResults[0].entry_date,
+      equity
+    });
+  }
+  
+  // Add equity point for each trade
+  for (const trade of sortedResults) {
+    // Skip pending trades
+    if (trade.result === 'pending') continue;
+    
+    // Update equity based on profit/loss
+    equity = equity * (1 + trade.profit_percentage / 100);
+    
+    // Add point to equity curve
+    equityCurve.push({
+      date: trade.exit_date || trade.entry_date,
+      equity
+    });
+  }
+  
+  return equityCurve;
+};
+
+/**
+ * Calculate maximum drawdown from equity curve
+ */
+const calculateMaxDrawdown = (equityCurve: { date: string; equity: number }[]): number => {
+  let maxDrawdown = 0;
+  let peak = 0;
+  
+  for (let i = 0; i < equityCurve.length; i++) {
+    if (equityCurve[i].equity > peak) {
+      peak = equityCurve[i].equity;
+    }
+    
+    const drawdown = (peak - equityCurve[i].equity) / peak;
+    if (drawdown > maxDrawdown) {
+      maxDrawdown = drawdown;
+    }
+  }
+  
+  return maxDrawdown;
+};
+
+/**
+ * Calculate historical performance including equity curve and drawdown
+ */
+const calculateHistoricalPerformance = (results: BacktestResult[]): BacktestHistoricalPerformance[] => {
+  // Sort by entry date
+  const sortedResults = [...results].sort((a, b) => 
+    new Date(a.entry_date).getTime() - new Date(b.entry_date).getTime()
+  );
+  
+  if (sortedResults.length === 0) return [];
+  
+  // Group trades by month
+  const tradesByMonth: Record<string, BacktestResult[]> = {};
+  
+  for (const trade of sortedResults) {
+    const date = new Date(trade.entry_date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    
+    if (!tradesByMonth[monthKey]) {
+      tradesByMonth[monthKey] = [];
+    }
+    
+    tradesByMonth[monthKey].push(trade);
+  }
+  
+  // Calculate performance for each month
+  const performance: BacktestHistoricalPerformance[] = [];
+  let cumulativeEquity = 100; // Starting with 100 units
+  let highWaterMark = cumulativeEquity;
+  
+  for (const [month, trades] of Object.entries(tradesByMonth)) {
+    const completedTrades = trades.filter(t => t.result !== 'pending');
+    const wins = completedTrades.filter(t => t.result === 'win');
+    
+    // Calculate month's P&L
+    let monthProfit = 0;
+    for (const trade of completedTrades) {
+      monthProfit += trade.profit_percentage;
+    }
+    
+    // Update equity
+    cumulativeEquity = cumulativeEquity * (1 + monthProfit / 100);
+    
+    // Update high water mark and calculate drawdown
+    highWaterMark = Math.max(highWaterMark, cumulativeEquity);
+    const drawdown = (highWaterMark - cumulativeEquity) / highWaterMark;
+    
+    performance.push({
+      date: month,
+      equity: cumulativeEquity,
+      drawdown,
+      trades: completedTrades.length,
+      winRate: completedTrades.length > 0 ? wins.length / completedTrades.length : 0
+    });
+  }
+  
+  return performance;
+};
+
+/**
+ * Calculate performance metrics by pattern type
+ */
+const calculatePatternPerformance = (results: BacktestResult[]): BacktestPatternPerformance[] => {
+  // Group trades by pattern type
+  const tradesByPattern: Record<string, BacktestResult[]> = {};
+  
+  for (const trade of results) {
+    if (!tradesByPattern[trade.pattern_type]) {
+      tradesByPattern[trade.pattern_type] = [];
+    }
+    
+    tradesByPattern[trade.pattern_type].push(trade);
+  }
+  
+  // Calculate performance for each pattern type
+  const performance: BacktestPatternPerformance[] = [];
+  
+  for (const [pattern, trades] of Object.entries(tradesByPattern)) {
+    const completedTrades = trades.filter(t => t.result !== 'pending');
+    const wins = completedTrades.filter(t => t.result === 'win');
+    const losses = completedTrades.filter(t => t.result === 'loss');
+    
+    const winRate = completedTrades.length > 0 ? wins.length / completedTrades.length : 0;
+    
+    const totalProfit = wins.reduce((sum, trade) => sum + trade.profit_percentage, 0);
+    const totalLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.profit_percentage, 0));
+    
+    const profitFactor = totalLoss === 0 ? totalProfit : totalProfit / totalLoss;
+    
+    const avgProfit = wins.length > 0 ? totalProfit / wins.length : 0;
+    const avgLoss = losses.length > 0 ? totalLoss / losses.length : 0;
+    
+    const expectancy = (winRate * avgProfit) - ((1 - winRate) * avgLoss);
+    
+    performance.push({
+      pattern_type: pattern,
+      total_trades: completedTrades.length,
+      win_count: wins.length,
+      loss_count: losses.length,
+      win_rate: winRate,
+      avg_profit: avgProfit,
+      avg_loss: avgLoss,
+      profit_factor: profitFactor,
+      expectancy
+    });
+  }
+  
+  // Sort by expectancy descending
+  return performance.sort((a, b) => b.expectancy - a.expectancy);
+};
+
+/**
+ * Calculate performance metrics by timeframe
+ */
+const calculateTimeframePerformance = (results: BacktestResult[]): BacktestTimeframePerformance[] => {
+  // Group trades by timeframe
+  const tradesByTimeframe: Record<string, BacktestResult[]> = {};
+  
+  for (const trade of results) {
+    if (!tradesByTimeframe[trade.timeframe]) {
+      tradesByTimeframe[trade.timeframe] = [];
+    }
+    
+    tradesByTimeframe[trade.timeframe].push(trade);
+  }
+  
+  // Calculate performance for each timeframe
+  const performance: BacktestTimeframePerformance[] = [];
+  
+  for (const [timeframe, trades] of Object.entries(tradesByTimeframe)) {
+    const completedTrades = trades.filter(t => t.result !== 'pending');
+    const wins = completedTrades.filter(t => t.result === 'win');
+    const losses = completedTrades.filter(t => t.result === 'loss');
+    
+    const winRate = completedTrades.length > 0 ? wins.length / completedTrades.length : 0;
+    
+    const totalProfit = wins.reduce((sum, trade) => sum + trade.profit_percentage, 0);
+    const totalLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.profit_percentage, 0));
+    
+    const profitFactor = totalLoss === 0 ? totalProfit : totalProfit / totalLoss;
+    
+    const avgProfit = completedTrades.length > 0 ? 
+      completedTrades.reduce((sum, t) => sum + t.profit_percentage, 0) / completedTrades.length : 0;
+    
+    // Calculate average days held
+    const tradesWithDates = completedTrades.filter(t => t.exit_date);
+    let totalDays = 0;
+    
+    for (const trade of tradesWithDates) {
+      const entryDate = new Date(trade.entry_date);
+      const exitDate = new Date(trade.exit_date as string);
+      const days = Math.floor((exitDate.getTime() - entryDate.getTime()) / (1000 * 60 * 60 * 24));
+      totalDays += days;
+    }
+    
+    const avgDaysHeld = tradesWithDates.length > 0 ? totalDays / tradesWithDates.length : 0;
+    
+    performance.push({
+      timeframe,
+      total_trades: completedTrades.length,
+      win_count: wins.length,
+      loss_count: losses.length,
+      win_rate: winRate,
+      avg_profit: avgProfit,
+      avg_days_held: avgDaysHeld,
+      profit_factor: profitFactor
+    });
+  }
+  
+  // Sort by win rate descending
+  return performance.sort((a, b) => b.win_rate - a.win_rate);
+};
+
+/**
+ * Calculate performance metrics by symbol
+ */
+const calculateSymbolPerformance = (results: BacktestResult[]): BacktestSymbolPerformance[] => {
+  // Group trades by symbol
+  const tradesBySymbol: Record<string, BacktestResult[]> = {};
+  
+  for (const trade of results) {
+    if (!tradesBySymbol[trade.symbol]) {
+      tradesBySymbol[trade.symbol] = [];
+    }
+    
+    tradesBySymbol[trade.symbol].push(trade);
+  }
+  
+  // Calculate performance for each symbol
+  const performance: BacktestSymbolPerformance[] = [];
+  
+  for (const [symbol, trades] of Object.entries(tradesBySymbol)) {
+    const completedTrades = trades.filter(t => t.result !== 'pending');
+    const wins = completedTrades.filter(t => t.result === 'win');
+    const losses = completedTrades.filter(t => t.result === 'loss');
+    
+    const winRate = completedTrades.length > 0 ? wins.length / completedTrades.length : 0;
+    
+    const totalProfit = wins.reduce((sum, trade) => sum + trade.profit_percentage, 0);
+    const totalLoss = Math.abs(losses.reduce((sum, trade) => sum + trade.profit_percentage, 0));
+    
+    const profitFactor = totalLoss === 0 ? totalProfit : totalProfit / totalLoss;
+    
+    const avgProfit = completedTrades.length > 0 ? 
+      completedTrades.reduce((sum, t) => sum + t.profit_percentage, 0) / completedTrades.length : 0;
+    
+    // Find best performing pattern for this symbol
+    const patternPerformance: Record<string, { wins: number; trades: number }> = {};
+    
+    for (const trade of completedTrades) {
+      if (!patternPerformance[trade.pattern_type]) {
+        patternPerformance[trade.pattern_type] = { wins: 0, trades: 0 };
+      }
+      
+      patternPerformance[trade.pattern_type].trades++;
+      if (trade.result === 'win') {
+        patternPerformance[trade.pattern_type].wins++;
+      }
+    }
+    
+    let bestPattern = '';
+    let bestWinRate = 0;
+    let minTrades = 3; // Minimum trades to consider a pattern
+    
+    for (const [pattern, stats] of Object.entries(patternPerformance)) {
+      if (stats.trades >= minTrades) {
+        const patternWinRate = stats.wins / stats.trades;
+        if (patternWinRate > bestWinRate) {
+          bestWinRate = patternWinRate;
+          bestPattern = pattern;
+        }
+      }
+    }
+    
+    performance.push({
+      symbol,
+      total_trades: completedTrades.length,
+      win_count: wins.length,
+      loss_count: losses.length,
+      win_rate: winRate,
+      avg_profit: avgProfit,
+      profit_factor: profitFactor,
+      best_pattern: bestPattern
+    });
+  }
+  
+  // Sort by profit factor descending
+  return performance.sort((a, b) => b.profit_factor - a.profit_factor);
+};
+
+/**
+ * Calculate performance trend by month
+ */
+const calculatePerformanceTrend = (results: BacktestResult[]): BacktestPerformanceTrend[] => {
+  // Group trades by month
+  const tradesByMonth: Record<string, BacktestResult[]> = {};
+  
+  for (const trade of results) {
+    const date = new Date(trade.entry_date);
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+    
+    if (!tradesByMonth[monthKey]) {
+      tradesByMonth[monthKey] = [];
+    }
+    
+    tradesByMonth[monthKey].push(trade);
+  }
+  
+  // Calculate performance for each month
+  const trend: BacktestPerformanceTrend[] = [];
+  
+  for (const [month, trades] of Object.entries(tradesByMonth)) {
+    const completedTrades = trades.filter(t => t.result !== 'pending');
+    const wins = completedTrades.filter(t => t.result === 'win');
+    
+    const winRate = completedTrades.length > 0 ? wins.length / completedTrades.length : 0;
+    
+    const totalProfit = wins.reduce((sum, trade) => sum + trade.profit_percentage, 0);
+    const totalLoss = Math.abs(completedTrades
+      .filter(t => t.result === 'loss')
+      .reduce((sum, trade) => sum + trade.profit_percentage, 0));
+    
+    const profitFactor = totalLoss === 0 ? totalProfit : totalProfit / totalLoss;
+    
+    const avgProfit = completedTrades.length > 0 ? 
+      completedTrades.reduce((sum, t) => sum + t.profit_percentage, 0) / completedTrades.length : 0;
+    
+    trend.push({
+      month,
+      trades: completedTrades.length,
+      win_rate: winRate,
+      profit_factor: profitFactor,
+      avg_profit: avgProfit
+    });
+  }
+  
+  // Sort by month ascending
+  return trend.sort((a, b) => a.month.localeCompare(b.month));
 };

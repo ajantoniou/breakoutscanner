@@ -1,14 +1,20 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { stockRecommendationService } from '@/services/api/stockRecommendationService';
-import { backtestPatternsWithYahoo, getBacktestStatistics } from '@/services/backtesting/yahooBacktestService';
+import { backtestPatternsWithYahoo, getBacktestStatistics, runYahooBacktest } from '@/services/backtesting/yahooBacktestService';
 import { PatternData } from '@/services/types/patternTypes';
 import { BacktestResult } from '@/services/types/backtestTypes';
-import { Button, FormControl, InputLabel, MenuItem, Select, CircularProgress, Snackbar, Alert, Typography, Box, Stack, Chip, Paper, ButtonGroup, Tooltip } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import DeleteIcon from '@mui/icons-material/Delete';
-import DownloadIcon from '@mui/icons-material/Download';
+import { Box, Button, FormControl, InputLabel, MenuItem, Select, TextField, Typography, 
+  Container, Snackbar, Alert, CircularProgress, Grid, Paper } from '@mui/material';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import TableChartIcon from '@mui/icons-material/TableChart';
+import DownloadIcon from '@mui/icons-material/Download';
+import BacktestResultsTable from './BacktestResultsTable';
+import BacktestAnalytics from './BacktestAnalytics';
+import BacktestFilter from './BacktestFilter';
+import { BacktestFilter as FilterType } from '../../services/types/backtestTypes';
+import AddIcon from '@mui/icons-material/Add';
+import DeleteIcon from '@mui/icons-material/Delete';
+import { ButtonGroup, Chip, Stack, Tooltip } from '@mui/material';
 
 /**
  * Dashboard component for backtesting with Yahoo Finance data
@@ -23,6 +29,10 @@ const YahooBacktestDashboard: React.FC = () => {
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('all');
   const [selectedDirection, setSelectedDirection] = useState<string>('all');
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [filteredResults, setFilteredResults] = useState<BacktestResult[]>([]);
+  const [activeFilter, setActiveFilter] = useState<FilterType>({});
 
   // Load patterns for backtesting
   const loadPatterns = async () => {
@@ -60,40 +70,68 @@ const YahooBacktestDashboard: React.FC = () => {
     }
   };
 
+  // Define the function to convert raw backtest results to our interface format
+  const convertToBacktestResult = (rawResult: any, index: number): BacktestResult => {
+    return {
+      id: `result-${index}`,
+      pattern_id: rawResult.patternId || `pattern-${index}`,
+      symbol: rawResult.symbol,
+      pattern_type: rawResult.patternType,
+      direction: rawResult.direction === 'up' ? 'bullish' : 'bearish',
+      timeframe: rawResult.timeframe,
+      entry_date: rawResult.entryDate,
+      entry_price: rawResult.entryPrice,
+      exit_date: rawResult.exitDate,
+      exit_price: rawResult.actualExitPrice,
+      profit_loss_percent: rawResult.profitLossPercent,
+      r_multiple: rawResult.rMultiple || null,
+      confidence_score: rawResult.confidenceScore,
+      result: rawResult.successful ? 'win' : 'loss',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+  };
+
   // Run backtest on loaded patterns
   const runBacktest = async () => {
+    setLoading(true);
+    setError(null);
+    
     try {
-      setBacktestLoading(true);
-      setError(null);
+      // Filter patterns by selected timeframe and direction
+      const filteredPatterns = patterns.filter(pattern => {
+        if (selectedTimeframe !== 'all' && pattern.timeframe !== selectedTimeframe) {
+          return false;
+        }
+        if (selectedDirection !== 'all' && pattern.direction !== selectedDirection) {
+          return false;
+        }
+        return true;
+      });
       
-      // Filter patterns based on selected timeframe and direction
-      let patternsToTest = [...patterns];
+      const results = await runYahooBacktest(filteredPatterns);
       
-      if (selectedTimeframe !== 'all') {
-        patternsToTest = patternsToTest.filter(pattern => pattern.timeframe === selectedTimeframe);
-      }
+      // Convert raw results to our interface format
+      const formattedResults = results.map(convertToBacktestResult);
       
-      if (selectedDirection !== 'all') {
-        patternsToTest = patternsToTest.filter(pattern => pattern.direction === selectedDirection);
-      }
-      
-      // Run backtest with Yahoo Finance data
-      const results = await backtestPatternsWithYahoo(patternsToTest, true);
+      setBacktestResults(formattedResults);
       
       // Calculate statistics
-      const stats = getBacktestStatistics(results);
-      
-      setBacktestResults(results);
+      const stats = getBacktestStatistics(formattedResults);
       setStatistics(stats);
-      setBacktestLoading(false);
+      
       setNotification({
-        message: `Backtest completed for ${results.length} patterns`,
+        message: `Backtested ${formattedResults.length} patterns successfully`,
         type: 'success'
       });
     } catch (err) {
-      console.error('Error running backtest:', err);
-      setError(`Error running backtest: ${err instanceof Error ? err.message : String(err)}`);
-      setBacktestLoading(false);
+      setError(err.message || 'An error occurred during backtesting');
+      setNotification({
+        message: err.message || 'An error occurred during backtesting',
+        type: 'error'
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -209,17 +247,17 @@ const YahooBacktestDashboard: React.FC = () => {
       
       // Group results by pattern type and calculate metrics
       backtestResults.forEach(result => {
-        const patternType = result.patternType;
+        const patternType = result.pattern_type;
         
         if (!metrics[patternType]) {
           metrics[patternType] = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
         }
         
         metrics[patternType].total += 1;
-        if (result.successful) {
+        if (result.result === 'win') {
           metrics[patternType].wins += 1;
         }
-        metrics[patternType].avgReturn += result.profitLossPercent;
+        metrics[patternType].avgReturn += result.profit_loss_percent;
       });
       
       // Calculate win rates and average returns
@@ -301,20 +339,20 @@ const YahooBacktestDashboard: React.FC = () => {
       
       // Group results by direction and calculate metrics
       backtestResults.forEach(result => {
-        const direction = result.predictedDirection;
+        const direction = result.direction;
         
         if (direction === 'bullish') {
           bullish.total += 1;
-          if (result.successful) {
+          if (result.result === 'win') {
             bullish.wins += 1;
           }
-          bullish.avgReturn += result.profitLossPercent;
+          bullish.avgReturn += result.profit_loss_percent;
         } else if (direction === 'bearish') {
           bearish.total += 1;
-          if (result.successful) {
+          if (result.result === 'win') {
             bearish.wins += 1;
           }
-          bearish.avgReturn += result.profitLossPercent;
+          bearish.avgReturn += result.profit_loss_percent;
         }
       });
       
@@ -412,7 +450,7 @@ const YahooBacktestDashboard: React.FC = () => {
       
       // Process each result to build metrics
       backtestResults.forEach(result => {
-        const patternType = result.patternType;
+        const patternType = result.pattern_type;
         
         // Initialize pattern metrics if not exists
         if (!metrics[patternType]) {
@@ -433,17 +471,17 @@ const YahooBacktestDashboard: React.FC = () => {
         
         // Update metrics
         metrics[patternType].totalTrades += 1;
-        if (result.successful) {
+        if (result.result === 'win') {
           metrics[patternType].winningTrades += 1;
-          metrics[patternType].avgWinAmount += result.profitLossPercent;
-          metrics[patternType].maxWin = Math.max(metrics[patternType].maxWin, result.profitLossPercent);
+          metrics[patternType].avgWinAmount += result.profit_loss_percent;
+          metrics[patternType].maxWin = Math.max(metrics[patternType].maxWin, result.profit_loss_percent);
         } else {
           metrics[patternType].losingTrades += 1;
-          metrics[patternType].avgLossAmount += result.profitLossPercent;
-          metrics[patternType].maxLoss = Math.min(metrics[patternType].maxLoss, result.profitLossPercent);
+          metrics[patternType].avgLossAmount += result.profit_loss_percent;
+          metrics[patternType].maxLoss = Math.min(metrics[patternType].maxLoss, result.profit_loss_percent);
         }
         
-        metrics[patternType].avgProfitLoss += result.profitLossPercent;
+        metrics[patternType].avgProfitLoss += result.profit_loss_percent;
         metrics[patternType].avgCandlesToBreakout += result.candlesToBreakout;
       });
       
@@ -573,18 +611,18 @@ const YahooBacktestDashboard: React.FC = () => {
       // Create CSV rows
       const rows = backtestResults.map(result => [
         result.symbol,
-        result.patternType,
+        result.pattern_type,
         result.timeframe,
-        result.predictedDirection,
-        result.entryPrice,
-        result.actualExitPrice,
-        result.targetPrice,
-        result.stopLoss,
-        result.profitLossPercent.toFixed(2),
-        result.successful ? 'Win' : 'Loss',
+        result.direction,
+        result.entry_price,
+        result.exit_price,
+        result.target_price,
+        result.stop_loss,
+        result.profit_loss_percent.toFixed(2),
+        result.result,
         result.candlesToBreakout,
-        result.entryDate,
-        result.exitDate
+        result.entry_date,
+        result.exit_date
       ].join(','));
       
       // Combine header and rows
@@ -656,6 +694,163 @@ const YahooBacktestDashboard: React.FC = () => {
       console.error('Error exporting to JSON:', err);
       setError(`Error exporting to JSON: ${err instanceof Error ? err.message : String(err)}`);
     }
+  };
+
+  // Handle pagination
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    setRowsPerPage(parseInt(event.target.value, 10));
+    setPage(0);
+  };
+
+  // Memo for available pattern types and timeframes
+  const availablePatternTypes = useMemo(() => {
+    const types = new Set<string>();
+    backtestResults.forEach(result => {
+      if (result.pattern_type) {
+        types.add(result.pattern_type);
+      }
+    });
+    return Array.from(types).sort();
+  }, [backtestResults]);
+  
+  const availableTimeframes = useMemo(() => {
+    const timeframes = new Set<string>();
+    backtestResults.forEach(result => {
+      if (result.timeframe) {
+        timeframes.add(result.timeframe);
+      }
+    });
+    return Array.from(timeframes).sort();
+  }, [backtestResults]);
+  
+  // Filter results based on active filter
+  useEffect(() => {
+    if (Object.keys(activeFilter).length === 0) {
+      setFilteredResults(backtestResults);
+      return;
+    }
+    
+    const filtered = backtestResults.filter(result => {
+      // Check each filter criterion
+      if (activeFilter.symbol && !result.symbol.toUpperCase().includes(activeFilter.symbol.toUpperCase())) {
+        return false;
+      }
+      
+      if (activeFilter.pattern_type && result.pattern_type !== activeFilter.pattern_type) {
+        return false;
+      }
+      
+      if (activeFilter.direction && result.direction !== activeFilter.direction) {
+        return false;
+      }
+      
+      if (activeFilter.timeframe && result.timeframe !== activeFilter.timeframe) {
+        return false;
+      }
+      
+      if (activeFilter.result && result.result !== activeFilter.result) {
+        return false;
+      }
+      
+      if (activeFilter.confidence_min && result.confidence_score < activeFilter.confidence_min) {
+        return false;
+      }
+      
+      if (activeFilter.confidence_max && result.confidence_score > activeFilter.confidence_max) {
+        return false;
+      }
+      
+      if (activeFilter.date_from) {
+        const fromDate = new Date(activeFilter.date_from);
+        const entryDate = new Date(result.entry_date);
+        if (entryDate < fromDate) {
+          return false;
+        }
+      }
+      
+      if (activeFilter.date_to) {
+        const toDate = new Date(activeFilter.date_to);
+        const entryDate = new Date(result.entry_date);
+        if (entryDate > toDate) {
+          return false;
+        }
+      }
+      
+      return true;
+    });
+    
+    setFilteredResults(filtered);
+    setPage(0); // Reset to first page when filter changes
+  }, [activeFilter, backtestResults]);
+  
+  // Apply filter handler
+  const handleApplyFilter = (filter: FilterType) => {
+    setActiveFilter(filter);
+  };
+
+  // Add export function
+  const handleExportCSV = () => {
+    if (filteredResults.length === 0) {
+      setNotification({
+        message: 'No results to export',
+        type: 'error'
+      });
+      return;
+    }
+    
+    // Create CSV header
+    const headers = [
+      'Symbol',
+      'Pattern',
+      'Direction',
+      'Timeframe',
+      'Entry Date',
+      'Entry Price',
+      'Exit Date',
+      'Exit Price',
+      'P/L %',
+      'R Multiple',
+      'Confidence',
+      'Result'
+    ].join(',');
+    
+    // Map results to CSV rows
+    const rows = filteredResults.map(result => [
+      result.symbol,
+      result.pattern_type,
+      result.direction,
+      result.timeframe,
+      result.entry_date,
+      result.entry_price,
+      result.exit_date || '',
+      result.exit_price || '',
+      result.profit_loss_percent ? result.profit_loss_percent.toFixed(2) : '',
+      result.r_multiple ? result.r_multiple.toFixed(2) : '',
+      result.confidence_score,
+      result.result
+    ].join(','));
+    
+    // Combine header and rows
+    const csvContent = `${headers}\n${rows.join('\n')}`;
+    
+    // Create a Blob and download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `backtest-results-${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    setNotification({
+      message: `Exported ${filteredResults.length} results to CSV`,
+      type: 'success'
+    });
   };
 
   return (
@@ -864,48 +1059,63 @@ const YahooBacktestDashboard: React.FC = () => {
         </div>
       )}
       
-      {/* Backtest Results */}
+      {/* Add Analytics Dashboard */}
+      {statistics && filteredResults.length > 0 && (
+        <BacktestAnalytics analytics={{
+          winRate: statistics.winRate,
+          profitFactor: statistics.profitFactor,
+          averageRMultiple: statistics.averageRMultiple,
+          expectancy: statistics.expectancy,
+          totalTrades: statistics.totalTrades,
+          totalWins: statistics.wins,
+          totalLosses: statistics.losses,
+          pendingTrades: statistics.pendingTrades || 0,
+          totalProfitLossPercent: statistics.totalProfitLossPercent,
+          averageWinPercent: statistics.averageWinPercent,
+          averageLossPercent: statistics.averageLossPercent,
+          winLossRatio: statistics.winLossRatio,
+          bestPattern: statistics.bestPattern,
+          bestPatternWinRate: statistics.bestPatternWinRate,
+          bestTimeframe: statistics.bestTimeframe,
+          averageDaysHeld: statistics.averageDaysHeld
+        }} />
+      )}
+      
+      {/* Add filter component if there are results */}
       {backtestResults.length > 0 && (
-        <div className="bg-white p-4 rounded shadow">
-          <h3 className="text-lg font-semibold mb-4">Backtest Results</h3>
-          
-          <div className="overflow-x-auto">
-            <table className="min-w-full bg-white">
-              <thead>
-                <tr className="bg-gray-100">
-                  <th className="px-4 py-2 text-left">Symbol</th>
-                  <th className="px-4 py-2 text-left">Pattern</th>
-                  <th className="px-4 py-2 text-left">Timeframe</th>
-                  <th className="px-4 py-2 text-right">Entry</th>
-                  <th className="px-4 py-2 text-right">Exit</th>
-                  <th className="px-4 py-2 text-right">P/L %</th>
-                  <th className="px-4 py-2 text-center">Result</th>
-                  <th className="px-4 py-2 text-right">Candles</th>
-                </tr>
-              </thead>
-              <tbody>
-                {backtestResults.map((result, index) => (
-                  <tr key={index} className="border-t">
-                    <td className="px-4 py-2 font-medium">{result.symbol}</td>
-                    <td className="px-4 py-2">{result.patternType}</td>
-                    <td className="px-4 py-2">{result.timeframe}</td>
-                    <td className="px-4 py-2 text-right">${result.entryPrice.toFixed(2)}</td>
-                    <td className="px-4 py-2 text-right">${result.actualExitPrice.toFixed(2)}</td>
-                    <td className={`px-4 py-2 text-right ${result.profitLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {result.profitLossPercent.toFixed(2)}%
-                    </td>
-                    <td className="px-4 py-2 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs ${result.successful ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {result.successful ? 'Win' : 'Loss'}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2 text-right">{result.candlesToBreakout}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <BacktestFilter 
+          onApplyFilter={handleApplyFilter}
+          availablePatternTypes={availablePatternTypes}
+          availableTimeframes={availableTimeframes}
+        />
+      )}
+      
+      {/* Modify results table to use filtered results */}
+      {filteredResults.length > 0 && (
+        <Box sx={{ mt: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">
+              Backtest Results {filteredResults.length !== backtestResults.length ? 
+                `(${filteredResults.length} of ${backtestResults.length})` : ''}
+            </Typography>
+            <Button 
+              variant="outlined" 
+              size="small" 
+              startIcon={<DownloadIcon />}
+              onClick={handleExportCSV}
+            >
+              Export CSV
+            </Button>
+          </Box>
+          <BacktestResultsTable 
+            results={filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)}
+            page={page}
+            rowsPerPage={rowsPerPage}
+            totalResults={filteredResults.length}
+            onPageChange={handleChangePage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+          />
+        </Box>
       )}
       
       <div className="mt-8 p-4 bg-gray-100 rounded">
