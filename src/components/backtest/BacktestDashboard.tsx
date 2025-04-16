@@ -18,7 +18,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import BacktestResultsTable from './BacktestResultsTable';
-import BacktestStatisticsCard from './BacktestStatisticsCard';
+import BacktestStatisticsDisplay from './BacktestStatisticsDisplay';
 import BacktestChart from './BacktestChart';
 import PatternPerformanceTable from './PatternPerformanceTable';
 import TimeframePerformanceTable from './TimeframePerformanceTable';
@@ -363,7 +363,7 @@ const BacktestDashboard: React.FC = () => {
     loadResults();
   };
   
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
+  const handleTabSwitch = (_event: React.SyntheticEvent, newValue: number) => {
     setActiveTab(newValue);
     
     // Load analytics if switching to analytics tab and not already loaded
@@ -421,7 +421,7 @@ const BacktestDashboard: React.FC = () => {
   };
   
   const renderFilterChips = () => {
-    return (
+  return (
       <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', gap: 1 }}>
         {symbol && (
           <Chip 
@@ -509,19 +509,19 @@ const BacktestDashboard: React.FC = () => {
   const renderFilterSection = () => {
     return (
       <Paper sx={{ p: 2, mb: 2 }}>
-        <Grid container spacing={2}>
+      <Grid container spacing={2}>
           <Grid item xs={12}>
-            <Typography variant="h6" gutterBottom>
+              <Typography variant="h6" gutterBottom>
               Filters
-            </Typography>
+              </Typography>
           </Grid>
-          
+              
           <Grid item xs={12} sm={6} md={3}>
-            <TextField
+                <TextField
               label="Symbol"
               value={symbol}
               onChange={(e) => setSymbol(e.target.value)}
-              fullWidth
+                  fullWidth
               placeholder="e.g. AAPL"
             />
           </Grid>
@@ -560,9 +560,9 @@ const BacktestDashboard: React.FC = () => {
           </Grid>
           
           <Grid item xs={12} sm={6} md={3}>
-            <FormControl fullWidth>
+                <FormControl fullWidth>
               <InputLabel>Timeframe</InputLabel>
-              <Select
+                  <Select
                 value={timeframe}
                 onChange={(e) => setTimeframe(e.target.value)}
                 label="Timeframe"
@@ -571,10 +571,10 @@ const BacktestDashboard: React.FC = () => {
                 {timeframes.map((tf) => (
                   <MenuItem key={tf} value={tf}>
                     {tf}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
           </Grid>
           
           <LocalizationProvider dateAdapter={AdapterDateFns}>
@@ -628,9 +628,9 @@ const BacktestDashboard: React.FC = () => {
           </Grid>
           
           <Grid item xs={12} sm={6} md={2}>
-            <Button 
-              variant="contained" 
-              color="primary" 
+              <Button 
+                variant="contained" 
+                color="primary" 
               onClick={applyFilters}
               fullWidth
               sx={{ height: '100%' }}
@@ -643,12 +643,12 @@ const BacktestDashboard: React.FC = () => {
             <Button 
               variant="outlined" 
               onClick={clearFilters}
-              fullWidth
+                fullWidth
               sx={{ height: '100%' }}
               disabled={activeFilterCount === 0}
-            >
+              >
               Clear Filters
-            </Button>
+              </Button>
           </Grid>
           
           {activeFilterCount > 0 && (
@@ -669,7 +669,7 @@ const BacktestDashboard: React.FC = () => {
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '70vh' }}>
         <CircularProgress />
-      </Box>
+                  </Box>
     );
   }
 
@@ -677,7 +677,7 @@ const BacktestDashboard: React.FC = () => {
     <Box sx={{ width: '100%', mb: 4 }}>
       <Typography variant="h4" gutterBottom>
         Backtest Results Dashboard
-      </Typography>
+                    </Typography>
       
       {renderFilterSection()}
       
@@ -690,7 +690,7 @@ const BacktestDashboard: React.FC = () => {
       <Paper sx={{ width: '100%', mb: 2 }}>
         <Tabs
           value={activeTab}
-          onChange={handleTabChange}
+          onChange={handleTabSwitch}
           indicatorColor="primary"
           textColor="primary"
           variant="fullWidth"
@@ -713,8 +713,8 @@ const BacktestDashboard: React.FC = () => {
                 <>
                   {statistics && (
                     <Box sx={{ mb: 3 }}>
-                      <BacktestStatisticsCard statistics={statistics} />
-                    </Box>
+                      <BacktestStatisticsDisplay statistics={statistics} />
+                  </Box>
                   )}
                   
                   <BacktestResultsTable

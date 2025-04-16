@@ -6,17 +6,69 @@ import ascendingTriangleDetector from './ascendingTriangleDetector';
 import descendingTriangleDetector from './descendingTriangleDetector';
 import breakoutDetector, { BreakoutData } from './breakoutDetector';
 
+interface PatternCache {
+  patterns: PatternData[];
+  metadata: DataMetadata;
+  timestamp: number;
+  candles: Candle[];
+}
+
 /**
- * Service for detecting chart patterns
+ * Service for detecting chart patterns with caching and optimization
  */
 class PatternDetectionService {
+  private static instance: PatternDetectionService;
+  private patternCache: Map<string, PatternCache> = new Map();
+  private readonly CACHE_DURATION = 60 * 1000; // 1 minute cache duration
+  private readonly MIN_CANDLES = 20;
+  private processingSymbols: Set<string> = new Set();
+
+  private constructor() {}
+
+  public static getInstance(): PatternDetectionService {
+    if (!PatternDetectionService.instance) {
+      PatternDetectionService.instance = new PatternDetectionService();
+    }
+    return PatternDetectionService.instance;
+  }
+
   /**
-   * Detect all patterns in a set of candles
-   * @param symbol Stock symbol
-   * @param candles Array of candles
-   * @param timeframe Timeframe string
-   * @param metadata Data metadata
-   * @returns Object with detected patterns and updated metadata
+   * Get cache key for a symbol and timeframe
+   */
+  private getCacheKey(symbol: string, timeframe: string): string {
+    return `${symbol}_${timeframe}`;
+  }
+
+  /**
+   * Check if cached data is still valid
+   */
+  private isCacheValid(cache: PatternCache): boolean {
+    return Date.now() - cache.timestamp <= this.CACHE_DURATION;
+  }
+
+  /**
+   * Check if candles have changed significantly from cached version
+   */
+  private haveCandlesChanged(newCandles: Candle[], cachedCandles: Candle[]): boolean {
+    if (newCandles.length !== cachedCandles.length) return true;
+    
+    // Check last 3 candles for changes
+    const checkCount = Math.min(3, newCandles.length);
+    for (let i = 1; i <= checkCount; i++) {
+      const newCandle = newCandles[newCandles.length - i];
+      const cachedCandle = cachedCandles[cachedCandles.length - i];
+      
+      if (newCandle.close !== cachedCandle.close || 
+          newCandle.volume !== cachedCandle.volume) {
+        return true;
+      }
+    }
+    
+    return false;
+  }
+
+  /**
+   * Detect patterns in candle data with caching and optimization
    */
   async detectPatterns(
     symbol: string,
@@ -24,48 +76,144 @@ class PatternDetectionService {
     timeframe: string,
     metadata: DataMetadata
   ): Promise<{ patterns: PatternData[], metadata: DataMetadata }> {
-    if (!candles || candles.length < 20) {
+    // Input validation
+    if (!candles || candles.length < this.MIN_CANDLES) {
       console.warn(`Not enough candles for ${symbol} (${timeframe}) to detect patterns`);
+      return { 
+        patterns: [], 
+        metadata: {
+          ...metadata,
+          source: 'insufficient_data'
+        }
+      };
+    }
+
+    const cacheKey = this.getCacheKey(symbol, timeframe);
+
+    // Check if we're already processing this symbol
+    if (this.processingSymbols.has(cacheKey)) {
+      const cache = this.patternCache.get(cacheKey);
+      if (cache) {
+        return { patterns: cache.patterns, metadata: cache.metadata };
+      }
       return { patterns: [], metadata };
     }
-    
-    // Get current price
-    const currentPrice = candles[candles.length - 1].close;
-    
-    // Detect patterns
-    const bullFlags = bullFlagDetector.detect(symbol, candles, timeframe, metadata).patterns;
-    const bearFlags = bearFlagDetector.detect(symbol, candles, timeframe, metadata).patterns;
-    const ascendingTriangles = ascendingTriangleDetector.detect(symbol, candles, timeframe, metadata).patterns;
-    const descendingTriangles = descendingTriangleDetector.detect(symbol, candles, timeframe, metadata).patterns;
-    const breakouts = breakoutDetector.detect(symbol, candles, timeframe, metadata).patterns;
-    
-    // Combine all patterns
-    const allPatterns = [
-      ...bullFlags,
-      ...bearFlags,
-      ...ascendingTriangles,
-      ...descendingTriangles,
-      ...breakouts
-    ];
-    
-    // Update metadata
-    const combinedMetadata = {
-      ...metadata,
-      patternDetection: {
-        timestamp: new Date().toISOString(),
-        patternsFound: allPatterns.length,
-        patternCounts: {
-          bullFlag: bullFlags.length,
-          bearFlag: bearFlags.length,
-          ascendingTriangle: ascendingTriangles.length,
-          descendingTriangle: descendingTriangles.length
-        }
+
+    try {
+      // Add to processing set
+      this.processingSymbols.add(cacheKey);
+
+      // Check cache
+      const cache = this.patternCache.get(cacheKey);
+      if (cache && 
+          this.isCacheValid(cache) && 
+          !this.haveCandlesChanged(candles, cache.candles)) {
+        return { patterns: cache.patterns, metadata: cache.metadata };
       }
-    };
-    
-    return { patterns: allPatterns, metadata: combinedMetadata };
+
+      // Get current price for reference
+      const currentPrice = candles[candles.length - 1].close;
+
+      // Run pattern detection in parallel
+      const [
+        bullFlags,
+        bearFlags,
+        ascendingTriangles,
+        descendingTriangles,
+        breakouts
+      ] = await Promise.all([
+        bullFlagDetector.detect(symbol, candles, timeframe, metadata),
+        bearFlagDetector.detect(symbol, candles, timeframe, metadata),
+        ascendingTriangleDetector.detect(symbol, candles, timeframe, metadata),
+        descendingTriangleDetector.detect(symbol, candles, timeframe, metadata),
+        breakoutDetector.detect(symbol, candles, timeframe, metadata)
+      ]);
+
+      // Combine all patterns
+      const allPatterns = [
+        ...bullFlags.patterns,
+        ...bearFlags.patterns,
+        ...ascendingTriangles.patterns,
+        ...descendingTriangles.patterns,
+        ...breakouts.patterns
+      ];
+
+      // Update pattern statuses based on current price
+      const updatedPatterns = allPatterns.map(pattern => ({
+        ...pattern,
+        current_price: currentPrice,
+        status: this.determinePatternStatus(pattern, currentPrice)
+      }));
+
+      // Create combined metadata
+      const combinedMetadata = {
+        ...metadata,
+        patternDetection: {
+          timestamp: new Date().toISOString(),
+          patternsFound: updatedPatterns.length,
+          patternTypes: {
+            bullFlag: bullFlags.patterns.length,
+            bearFlag: bearFlags.patterns.length,
+            ascendingTriangle: ascendingTriangles.patterns.length,
+            descendingTriangle: descendingTriangles.patterns.length,
+            breakout: breakouts.patterns.length
+          }
+        }
+      };
+
+      // Update cache
+      this.patternCache.set(cacheKey, {
+        patterns: updatedPatterns,
+        metadata: combinedMetadata,
+        timestamp: Date.now(),
+        candles
+      });
+
+      return { patterns: updatedPatterns, metadata: combinedMetadata };
+
+    } finally {
+      // Remove from processing set
+      this.processingSymbols.delete(cacheKey);
+    }
   }
-  
+
+  /**
+   * Determine pattern status based on current price
+   */
+  private determinePatternStatus(
+    pattern: PatternData,
+    currentPrice: number
+  ): 'active' | 'completed' | 'failed' {
+    if (pattern.status !== 'active') return pattern.status;
+
+    const priceChange = ((currentPrice - pattern.entry_price) / pattern.entry_price) * 100;
+    
+    if (pattern.direction === 'bullish') {
+      if (currentPrice >= pattern.target_price) return 'completed';
+      if (currentPrice <= pattern.stop_loss) return 'failed';
+    } else {
+      if (currentPrice <= pattern.target_price) return 'completed';
+      if (currentPrice >= pattern.stop_loss) return 'failed';
+    }
+
+    return 'active';
+  }
+
+  /**
+   * Clear cache for a specific symbol and timeframe
+   */
+  public clearCache(symbol: string, timeframe: string): void {
+    const cacheKey = this.getCacheKey(symbol, timeframe);
+    this.patternCache.delete(cacheKey);
+  }
+
+  /**
+   * Clear all cached data
+   */
+  public clearAllCache(): void {
+    this.patternCache.clear();
+  }
+
   /**
    * Scan a symbol for patterns across multiple timeframes
    * @param symbol Stock symbol
@@ -207,41 +355,4 @@ class PatternDetectionService {
   }
 }
 
-// Create instance of the detector
-const patternDetectionService = new PatternDetectionService();
-
-// Add named export function for detectMultiTimeframePatterns that's imported by patternDetectionManager.ts
-export const detectMultiTimeframePatterns = async (
-  symbol: string,
-  candlesByTimeframe: Record<string, Candle[]>,
-  currentPrice: number
-): Promise<PatternData[]> => {
-  try {
-    // This is a wrapper function that delegates to the main implementation in patternDetectionService.ts
-    // It's needed because patternDetectionManager.ts imports from this location
-    
-    // Process each timeframe
-    const allPatterns: PatternData[] = [];
-    
-    for (const [timeframe, candles] of Object.entries(candlesByTimeframe)) {
-      if (candles.length >= 20) {
-        const metadata = {
-          fetchedAt: new Date().toISOString(),
-          isDelayed: false,
-          source: 'realtime'
-        };
-        
-        const result = await patternDetectionService.detectPatterns(symbol, candles, timeframe, metadata);
-        allPatterns.push(...result.patterns);
-      }
-    }
-    
-    return allPatterns;
-  } catch (error) {
-    console.error(`Error in detectMultiTimeframePatterns for ${symbol}:`, error);
-    return [];
-  }
-};
-
-// Keep the default export for backward compatibility
-export default patternDetectionService;
+export default PatternDetectionService.getInstance();

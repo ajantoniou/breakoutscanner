@@ -1,4 +1,3 @@
-
 import React from "react";
 import { PatternData } from "@/services/types/patternTypes";
 import PatternRowItem from "./PatternRowItem";
@@ -6,16 +5,19 @@ import PatternRowItem from "./PatternRowItem";
 interface PatternTableRowProps {
   pattern: PatternData;
   onAddToTradeList?: (pattern: PatternData) => void;
+  onSetExitAlert?: (pattern: PatternData) => void;
 }
 
 const PatternTableRow: React.FC<PatternTableRowProps> = ({ 
   pattern,
-  onAddToTradeList
+  onAddToTradeList,
+  onSetExitAlert
 }) => {
   return (
     <PatternRowItem 
       pattern={pattern}
       onAddToTradeList={onAddToTradeList}
+      onSetExitAlert={onSetExitAlert}
     />
   );
 };

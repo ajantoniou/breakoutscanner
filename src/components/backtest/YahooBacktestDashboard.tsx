@@ -1016,20 +1016,20 @@ const YahooBacktestDashboard: React.FC = () => {
                 <div>
                   <p className="text-gray-500">Win Rate:</p>
                   <p className="font-semibold">{statistics.overall.winRate.toFixed(1)}%</p>
-                </div>
+              </div>
                 <div>
                   <p className="text-gray-500">Profit Factor:</p>
                   <p className="font-semibold">{statistics.overall.profitFactor.toFixed(2)}</p>
-                </div>
+              </div>
                 <div>
                   <p className="text-gray-500">Avg. Profit/Loss:</p>
                   <p className={`font-semibold ${statistics.overall.averageProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {statistics.overall.averageProfitLoss.toFixed(2)}%
                   </p>
-                </div>
               </div>
             </div>
-            
+          </div>
+          
             {/* Timeframe Stats */}
             <div className="overflow-x-auto">
               <table className="min-w-full bg-white">

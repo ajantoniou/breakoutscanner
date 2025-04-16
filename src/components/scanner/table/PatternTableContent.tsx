@@ -1,4 +1,3 @@
-
 import React from "react";
 import { Table, TableBody, TableHeader, TableHead, TableRow } from "@/components/ui/table";
 import { PatternData } from "@/services/types/patternTypes";
@@ -11,6 +10,7 @@ interface PatternTableContentProps {
   sortDirection: 'asc' | 'desc';
   handleSort: (field: keyof PatternData) => void;
   onAddToTradeList?: (pattern: PatternData) => void;
+  onSetExitAlert?: (pattern: PatternData) => void;
 }
 
 const PatternTableContent: React.FC<PatternTableContentProps> = ({ 
@@ -19,7 +19,8 @@ const PatternTableContent: React.FC<PatternTableContentProps> = ({
   sortField, 
   sortDirection,
   handleSort,
-  onAddToTradeList
+  onAddToTradeList,
+  onSetExitAlert
 }) => {
   // Helper function to render sort indicator
   const renderSortIndicator = (field: keyof PatternData) => {
@@ -44,21 +45,21 @@ const PatternTableContent: React.FC<PatternTableContentProps> = ({
             <TableHead>Direction</TableHead>
             <TableHead 
               className="cursor-pointer hover:bg-slate-50"
-              onClick={() => handleSort('patternType')}
+              onClick={() => handleSort('pattern_type')}
             >
-              Pattern Type {renderSortIndicator('patternType')}
+              Pattern Type {renderSortIndicator('pattern_type')}
             </TableHead>
             <TableHead 
               className="cursor-pointer hover:bg-slate-50"
-              onClick={() => handleSort('entryPrice')}
+              onClick={() => handleSort('entry_price')}
             >
-              Entry Price {renderSortIndicator('entryPrice')}
+              Entry Price {renderSortIndicator('entry_price')}
             </TableHead>
             <TableHead 
               className="cursor-pointer hover:bg-slate-50"
-              onClick={() => handleSort('targetPrice')}
+              onClick={() => handleSort('target_price')}
             >
-              Target Price {renderSortIndicator('targetPrice')}
+              Target Price {renderSortIndicator('target_price')}
             </TableHead>
             <TableHead>RSI</TableHead>
             <TableHead>ATR</TableHead>
@@ -86,9 +87,10 @@ const PatternTableContent: React.FC<PatternTableContentProps> = ({
           ) : (
             patterns.map((pattern) => (
               <PatternTableRow
-                key={pattern.id || `${pattern.symbol}-${pattern.patternType}`}
+                key={pattern.id || `${pattern.symbol}-${pattern.pattern_type}`}
                 pattern={pattern}
                 onAddToTradeList={onAddToTradeList}
+                onSetExitAlert={onSetExitAlert}
               />
             ))
           )}

@@ -1,13 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProviderWrapper as AuthProvider } from '@/services/auth/AuthProviderWrapper';
-// We no longer need ProtectedRoute or Login component for this simplified access
-// import ProtectedRoute from '@/components/auth/ProtectedRoute';
-// import Login from '@/components/auth/Login'; 
-import Navbar from '@/components/layout/Navbar';
+import Layout from '@/components/layout/Layout';
 import ScannerDashboard from '@/components/scanner/ScannerDashboard';
 import BacktestDashboard from '@/components/backtest/BacktestDashboard';
 import YahooBacktestDashboard from '@/components/backtest/YahooBacktestDashboard';
+import PolygonBacktestDashboard from '@/components/backtest/PolygonBacktestDashboard';
 import NotificationCenter from '@/components/notifications/NotificationCenter';
 import { ThemeProvider, createTheme } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
@@ -21,7 +19,6 @@ import {
   fetchSwingTradingResults
 } from '@/services/api/apiService';
 import { toast } from "sonner";
-// Import our GoldenScanner page component
 import GoldenScanner from '@/pages/GoldenScanner';
 
 // Create theme
@@ -179,6 +176,21 @@ function App() {
   const [activeScanner, setActiveScanner] = useState<'day' | 'swing' | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Add missing state for performance metrics
+  const [performanceMetrics, setPerformanceMetrics] = useState({
+    winRate: 0,
+    profitFactor: 0,
+    avgProfit: 0,
+    avgLoss: 0,
+    consistencyScore: 0,
+    riskRewardRatio: 0,
+    maxDrawdown: 0,
+    targetHitRate: 0,
+    totalTrades: 0,
+    historicalPerformance: [],
+    winLossDistribution: { wins: 0, losses: 0 }
+  });
+
   // Function to fetch initial data
   const fetchInitialData = useCallback(async () => {
     setIsLoading(true);
@@ -239,49 +251,104 @@ function App() {
     }
   }, []);
 
+  // Add archive pattern handler
+  const handleArchivePattern = useCallback((pattern: PatternData) => {
+    // TODO: Implement archive functionality
+    console.log('Archiving pattern:', pattern);
+  }, []);
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <AuthProvider> {/* Keep AuthProvider for potential context needs, though login isn't enforced */}
+      <AuthProvider>
         <Router>
-          <Navbar />
-          <Box sx={{ display: 'flex', flexDirection: 'column', flexGrow: 1, padding: 2 }}>
-            {/* Optional: Display global error messages */}
-            {error && <div className="error-message">{error}</div>}
-            <Routes>
-              {/* Login route now redirects immediately */}
-              <Route path="/login" element={<Navigate to="/golden-scanner" replace />} />
-              
-              {/* Scanner Dashboard */}
-              <Route 
-                path="/scanner" 
-                element={(
-                  <ScannerDashboard 
-                    dayTradingResults={dayTradingResults} 
-                    swingTradingResults={swingTradingResults} 
-                    backtestStats={backtestStats}
-                    isLoading={isLoading}
-                    activeScanner={activeScanner}
-                    onRunScanner={handleRunScanner}
-                  />
-                )}
-              />
-              
-              {/* GoldenScanner fetches data directly from Supabase */}
-              <Route 
-                path="/golden-scanner" 
-                element={<GoldenScanner />}
-              />
-              
-              <Route path="/backtest" element={<BacktestDashboard signals={dayTradingResults} />} />
-              <Route path="/yahoo-backtest" element={<YahooBacktestDashboard />} />
-              <Route path="/notifications" element={<NotificationCenter />} />
-              
-              {/* Keep redirects for root and catch-all */}
-              <Route path="/" element={<Navigate to="/golden-scanner" replace />} />
-              <Route path="*" element={<Navigate to="/golden-scanner" replace />} />
-            </Routes>
-          </Box>
+          <Routes>
+            {/* Dashboard */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={
+              <Layout>
+                <ScannerDashboard 
+                  dayTradingResults={dayTradingResults}
+                  swingTradingResults={swingTradingResults}
+                  isLoading={isLoading}
+                  activeScanner={activeScanner}
+                  onRunScanner={() => handleRunScanner('day', '1h')}
+                  onArchivePattern={handleArchivePattern}
+                  backtestStats={backtestStats}
+                  performanceMetrics={performanceMetrics}
+                />
+              </Layout>
+            } />
+
+            {/* Scanner Routes */}
+            <Route path="/golden-scanner" element={
+              <Layout>
+                <GoldenScanner />
+              </Layout>
+            } />
+            <Route path="/day-scanner" element={
+              <Layout>
+                <ScannerDashboard 
+                  dayTradingResults={dayTradingResults}
+                  swingTradingResults={[]}
+                  isLoading={isLoading}
+                  activeScanner={activeScanner}
+                  onRunScanner={() => handleRunScanner('day', '1h')}
+                  onArchivePattern={handleArchivePattern}
+                  backtestStats={backtestStats}
+                  performanceMetrics={performanceMetrics}
+                  mode="day"
+                />
+              </Layout>
+            } />
+            <Route path="/swing-scanner" element={
+              <Layout>
+                <ScannerDashboard 
+                  dayTradingResults={[]}
+                  swingTradingResults={swingTradingResults}
+                  isLoading={isLoading}
+                  activeScanner={activeScanner}
+                  onRunScanner={() => handleRunScanner('swing', '1d')}
+                  onArchivePattern={handleArchivePattern}
+                  backtestStats={backtestStats}
+                  performanceMetrics={performanceMetrics}
+                  mode="swing"
+                />
+              </Layout>
+            } />
+
+            {/* Backtest Routes */}
+            <Route path="/backtest" element={
+              <Layout>
+                <BacktestDashboard />
+              </Layout>
+            } />
+            <Route path="/backtest/results" element={
+              <Layout>
+                <PolygonBacktestDashboard />
+              </Layout>
+            } />
+            <Route path="/backtest/analytics" element={
+              <Layout>
+                <BacktestDashboard />
+              </Layout>
+            } />
+
+            {/* Other Routes */}
+            <Route path="/notifications" element={
+              <Layout>
+                <NotificationCenter />
+              </Layout>
+            } />
+            <Route path="/settings" element={
+              <Layout>
+                <div>Settings Page</div>
+              </Layout>
+            } />
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
         </Router>
       </AuthProvider>
     </ThemeProvider>

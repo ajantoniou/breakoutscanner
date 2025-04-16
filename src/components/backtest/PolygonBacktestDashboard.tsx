@@ -9,6 +9,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadIcon from '@mui/icons-material/Download';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import TableChartIcon from '@mui/icons-material/TableChart';
+import { fetchPatterns } from '@/services/api/apiService';
 
 // Add visualization components
 const PatternPerformanceChart: React.FC<{ backtestResults: BacktestResult[] }> = ({ backtestResults }) => {
@@ -18,17 +19,17 @@ const PatternPerformanceChart: React.FC<{ backtestResults: BacktestResult[] }> =
     
     // Group results by pattern type and calculate metrics
     backtestResults.forEach(result => {
-      const patternType = result.patternType;
+      const patternType = result.pattern_type;
       
       if (!metrics[patternType]) {
         metrics[patternType] = { total: 0, wins: 0, winRate: 0, avgReturn: 0 };
       }
       
       metrics[patternType].total += 1;
-      if (result.successful) {
+      if (result.result === 'win') {
         metrics[patternType].wins += 1;
       }
-      metrics[patternType].avgReturn += result.profitLossPercent;
+      metrics[patternType].avgReturn += result.profit_loss_percent;
     });
     
     // Calculate win rates and average returns
@@ -110,20 +111,20 @@ const DirectionDistributionChart: React.FC<{ backtestResults: BacktestResult[] }
     
     // Group results by direction and calculate metrics
     backtestResults.forEach(result => {
-      const direction = result.predictedDirection;
+      const direction = result.direction;
       
       if (direction === 'bullish') {
         bullish.total += 1;
-        if (result.successful) {
+        if (result.result === 'win') {
           bullish.wins += 1;
         }
-        bullish.avgReturn += result.profitLossPercent;
+        bullish.avgReturn += result.profit_loss_percent || 0;
       } else if (direction === 'bearish') {
         bearish.total += 1;
-        if (result.successful) {
+        if (result.result === 'win') {
           bearish.wins += 1;
         }
-        bearish.avgReturn += result.profitLossPercent;
+        bearish.avgReturn += result.profit_loss_percent || 0;
       }
     });
     
@@ -221,7 +222,7 @@ const PatternMetricsTable: React.FC<{ backtestResults: BacktestResult[] }> = ({ 
     
     // Process each result to build metrics
     backtestResults.forEach(result => {
-      const patternType = result.patternType;
+      const patternType = result.pattern_type;
       
       // Initialize pattern metrics if not exists
       if (!metrics[patternType]) {
@@ -242,18 +243,18 @@ const PatternMetricsTable: React.FC<{ backtestResults: BacktestResult[] }> = ({ 
       
       // Update metrics
       metrics[patternType].totalTrades += 1;
-      if (result.successful) {
+      if (result.result === 'win') {
         metrics[patternType].winningTrades += 1;
-        metrics[patternType].avgWinAmount += result.profitLossPercent;
-        metrics[patternType].maxWin = Math.max(metrics[patternType].maxWin, result.profitLossPercent);
+        metrics[patternType].avgWinAmount += result.profit_loss_percent;
+        metrics[patternType].maxWin = Math.max(metrics[patternType].maxWin, result.profit_loss_percent);
       } else {
         metrics[patternType].losingTrades += 1;
-        metrics[patternType].avgLossAmount += result.profitLossPercent;
-        metrics[patternType].maxLoss = Math.min(metrics[patternType].maxLoss, result.profitLossPercent);
+        metrics[patternType].avgLossAmount += result.profit_loss_percent;
+        metrics[patternType].maxLoss = Math.min(metrics[patternType].maxLoss, result.profit_loss_percent);
       }
       
-      metrics[patternType].avgProfitLoss += result.profitLossPercent;
-      metrics[patternType].avgCandlesToBreakout += result.candlesToBreakout;
+      metrics[patternType].avgProfitLoss += result.profit_loss_percent;
+      metrics[patternType].avgCandlesToBreakout += 0; // Default value since candlesToBreakout is not in the interface
     });
     
     // Calculate averages and ratios
@@ -365,21 +366,18 @@ const PolygonBacktestDashboard: React.FC = () => {
   const [selectedDirection, setSelectedDirection] = useState<string>('all');
   const [notification, setNotification] = useState<{message: string, type: 'success' | 'error' | 'info'} | null>(null);
 
-  // Load patterns for backtesting
+  // Load patterns from API
   const loadPatterns = async () => {
     try {
       setLoading(true);
       setError(null);
       
-      // Get recommendations for all scanner modes
-      const allRecommendations = await stockRecommendationService.getAllRecommendations(70);
+      // Fetch real patterns from the API
+      const dayPatterns = await fetchPatterns('day');
+      const swingPatterns = await fetchPatterns('swing');
       
       // Combine all patterns
-      const allPatterns = [
-        ...allRecommendations.dayTrading,
-        ...allRecommendations.swingTrading,
-        ...allRecommendations.golden
-      ];
+      const allPatterns = [...dayPatterns, ...swingPatterns];
       
       // Remove duplicates (same symbol and timeframe)
       const uniquePatterns = allPatterns.filter((pattern, index, self) =>
@@ -391,7 +389,7 @@ const PolygonBacktestDashboard: React.FC = () => {
       setPatterns(uniquePatterns);
       setLoading(false);
       setNotification({
-        message: `Loaded ${uniquePatterns.length} patterns for backtesting`,
+        message: `Loaded ${uniquePatterns.length} real patterns for backtesting`,
         type: 'info'
       });
     } catch (err) {
@@ -418,6 +416,12 @@ const PolygonBacktestDashboard: React.FC = () => {
         patternsToTest = patternsToTest.filter(pattern => pattern.direction === selectedDirection);
       }
       
+      if (patternsToTest.length === 0) {
+        setError("No patterns available to backtest with selected filters.");
+        setBacktestLoading(false);
+        return;
+      }
+      
       // Run backtest with Polygon.io data
       const results = await backtestPatternsWithPolygon(patternsToTest, true);
       
@@ -428,7 +432,7 @@ const PolygonBacktestDashboard: React.FC = () => {
       setStatistics(stats);
       setBacktestLoading(false);
       setNotification({
-        message: `Backtest completed for ${results.length} patterns`,
+        message: `Backtest completed for ${results.length} patterns using real Polygon.io data`,
         type: 'success'
       });
     } catch (err) {
@@ -436,100 +440,6 @@ const PolygonBacktestDashboard: React.FC = () => {
       setError(`Error running backtest: ${err instanceof Error ? err.message : String(err)}`);
       setBacktestLoading(false);
     }
-  };
-
-  // Generate mock patterns for testing
-  const generateMockPatterns = () => {
-    try {
-      const timeframes = ['15m', '30m', '1h', '4h', '1d'];
-      const patternTypes = ['Cup and Handle', 'Double Bottom', 'Double Top', 'Head and Shoulders', 'Inverse Head and Shoulders', 'Triangle', 'Wedge', 'Flag', 'Channel Breakout'];
-      const symbols = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'META', 'TSLA', 'NVDA', 'AMD', 'INTC', 'DIS', 'JPM', 'BAC', 'WMT', 'TGT', 'NKE'];
-      const channelTypes = ['horizontal', 'ascending', 'descending'];
-      
-      // Generate 5-15 random patterns
-      const numPatterns = Math.floor(Math.random() * 11) + 5;
-      const mockPatterns: PatternData[] = [];
-      
-      const now = new Date();
-      // Generate patterns with dates in the past (1-30 days ago)
-      for (let i = 0; i < numPatterns; i++) {
-        const direction = Math.random() > 0.5 ? 'bullish' : 'bearish';
-        const symbol = symbols[Math.floor(Math.random() * symbols.length)];
-        const timeframe = timeframes[Math.floor(Math.random() * timeframes.length)];
-        const patternType = patternTypes[Math.floor(Math.random() * patternTypes.length)];
-        const channelType = channelTypes[Math.floor(Math.random() * channelTypes.length)] as 'horizontal' | 'ascending' | 'descending';
-        
-        // Generate realistic price data
-        const basePrice = Math.random() * 200 + 20; // $20-$220
-        const entryPrice = Number(basePrice.toFixed(2));
-        
-        // Target price is higher for bullish and lower for bearish
-        let targetPrice;
-        let stopLoss;
-        
-        if (direction === 'bullish') {
-          targetPrice = Number((entryPrice * (1 + (Math.random() * 0.2 + 0.05))).toFixed(2)); // 5-25% higher
-          stopLoss = Number((entryPrice * (1 - (Math.random() * 0.1 + 0.02))).toFixed(2)); // 2-12% lower
-        } else {
-          targetPrice = Number((entryPrice * (1 - (Math.random() * 0.2 + 0.05))).toFixed(2)); // 5-25% lower
-          stopLoss = Number((entryPrice * (1 + (Math.random() * 0.1 + 0.02))).toFixed(2)); // 2-12% higher
-        }
-        
-        // Calculate risk/reward ratio
-        const riskRewardRatio = Number((Math.abs(targetPrice - entryPrice) / Math.abs(stopLoss - entryPrice)).toFixed(2));
-        
-        // Random detection date between 1-30 days ago
-        const daysAgo = Math.floor(Math.random() * 30) + 1;
-        const detectionDate = new Date(now);
-        detectionDate.setDate(detectionDate.getDate() - daysAgo);
-        
-        mockPatterns.push({
-          id: `MOCK-${symbol}-${timeframe}-${i}`,
-          symbol,
-          timeframe,
-          pattern_type: patternType,
-          direction,
-          entry_price: entryPrice,
-          target_price: targetPrice,
-          stop_loss: stopLoss,
-          risk_reward_ratio: riskRewardRatio,
-          confidence_score: Number((Math.random() * 40 + 60).toFixed(1)), // 60-100
-          created_at: detectionDate.toISOString(),
-          detected_at: detectionDate.toISOString(), // For backtest compatibility
-          status: 'active',
-          channel_type: channelType,
-          is_ai_generated: true,
-          updated_at: detectionDate.toISOString(),
-        });
-      }
-      
-      // Combine with existing patterns or replace them
-      const updatedPatterns = [...patterns, ...mockPatterns];
-      setPatterns(updatedPatterns);
-      
-      // Save to localStorage
-      localStorage.setItem('backtestPatterns', JSON.stringify(updatedPatterns));
-      
-      setNotification({
-        message: `Generated ${mockPatterns.length} mock patterns for backtesting`,
-        type: 'success'
-      });
-    } catch (err) {
-      console.error('Error generating mock patterns:', err);
-      setError(`Error generating mock patterns: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  };
-
-  // Clear all patterns
-  const clearPatterns = () => {
-    setPatterns([]);
-    setBacktestResults([]);
-    setStatistics({});
-    localStorage.removeItem('backtestPatterns');
-    setNotification({
-      message: 'All patterns cleared',
-      type: 'info'
-    });
   };
 
   // Export backtest results to CSV
@@ -563,18 +473,18 @@ const PolygonBacktestDashboard: React.FC = () => {
       // Create CSV rows
       const rows = backtestResults.map(result => [
         result.symbol,
-        result.patternType,
+        result.pattern_type,
         result.timeframe,
-        result.predictedDirection,
-        result.entryPrice,
-        result.actualExitPrice,
-        result.targetPrice,
-        result.stopLoss,
-        result.profitLossPercent.toFixed(2),
-        result.successful ? 'Win' : 'Loss',
-        result.candlesToBreakout,
-        result.entryDate,
-        result.exitDate
+        result.direction,
+        result.entry_price,
+        result.exit_price || 0,
+        '-',
+        '-',
+        result.profit_loss_percent ? result.profit_loss_percent.toFixed(2) : '0.00',
+        result.result === 'win' ? 'Win' : result.result === 'loss' ? 'Loss' : 'Pending',
+        '---', // Since candles_to_breakout is not in the interface
+        result.entry_date,
+        result.exit_date || 'N/A'
       ].join(','));
       
       // Combine header and rows
@@ -715,25 +625,16 @@ const PolygonBacktestDashboard: React.FC = () => {
             disabled={backtestLoading || patterns.length === 0}
             startIcon={backtestLoading ? <CircularProgress size={20} /> : null}
           >
-            {backtestLoading ? 'Running...' : 'Run Backtest'}
+            {backtestLoading ? 'Running...' : 'Run Backtest with Real Data'}
           </Button>
           
           <Button
             variant="outlined"
             color="secondary"
-            onClick={generateMockPatterns}
+            onClick={loadPatterns}
             startIcon={<AddIcon />}
           >
-            Generate Mock Patterns
-          </Button>
-          
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={clearPatterns}
-            startIcon={<DeleteIcon />}
-          >
-            Clear All
+            Refresh Patterns
           </Button>
 
           {/* Export Button Group */}
@@ -787,6 +688,40 @@ const PolygonBacktestDashboard: React.FC = () => {
         )}
       </Stack>
       
+      {/* Results Summary */}
+      {backtestResults.length > 0 && (
+        <div className="bg-white p-4 rounded shadow mb-6">
+          <h3 className="text-lg font-semibold mb-2">Backtest Results Summary</h3>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="border rounded p-3">
+              <div className="text-sm text-gray-600">Total Patterns</div>
+              <div className="text-2xl font-bold">{backtestResults.length}</div>
+            </div>
+            
+            <div className="border rounded p-3">
+              <div className="text-sm text-gray-600">Win Rate</div>
+              <div className="text-2xl font-bold text-green-600">
+                {statistics.overall ? (statistics.overall.winRate * 100).toFixed(1) + '%' : 'N/A'}
+              </div>
+            </div>
+            
+            <div className="border rounded p-3">
+              <div className="text-sm text-gray-600">Avg. Profit/Loss</div>
+              <div className={`text-2xl font-bold ${statistics.overall && statistics.overall.averageProfitLoss > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {statistics.overall ? statistics.overall.averageProfitLoss.toFixed(2) + '%' : 'N/A'}
+              </div>
+            </div>
+            
+            <div className="border rounded p-3">
+              <div className="text-sm text-gray-600">Profit Factor</div>
+              <div className="text-2xl font-bold text-blue-600">
+                {statistics.overall ? statistics.overall.profitFactor.toFixed(2) : 'N/A'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       {/* Visualization Components */}
       {backtestResults.length > 0 && (
         <>
@@ -796,67 +731,7 @@ const PolygonBacktestDashboard: React.FC = () => {
         </>
       )}
       
-      {/* Backtest Statistics */}
-      {Object.keys(statistics).length > 0 && (
-        <div className="mb-6 bg-white p-4 rounded shadow">
-          <h3 className="text-lg font-semibold mb-4">Backtest Statistics</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Overall Stats */}
-            <div className="bg-gray-50 p-4 rounded">
-              <h4 className="font-semibold mb-2">Overall Performance</h4>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <p className="text-gray-500">Total Trades:</p>
-                  <p className="font-semibold">{statistics.overall?.totalTrades || 0}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Win Rate:</p>
-                  <p className="font-semibold">{statistics.overall?.winRate.toFixed(1) || 0}%</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Profit Factor:</p>
-                  <p className="font-semibold">{statistics.overall?.profitFactor.toFixed(2) || 0}</p>
-                </div>
-                <div>
-                  <p className="text-gray-500">Avg. Profit/Loss:</p>
-                  <p className={`font-semibold ${statistics.overall?.averageProfitLoss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {statistics.overall?.averageProfitLoss.toFixed(2) || 0}%
-                  </p>
-                </div>
-              </div>
-            </div>
-            
-            {/* Timeframe Stats */}
-            <div className="overflow-x-auto">
-              <table className="min-w-full bg-white">
-                <thead>
-                  <tr className="bg-gray-100">
-                    <th className="px-4 py-2 text-left">Timeframe</th>
-                    <th className="px-4 py-2 text-right">Trades</th>
-                    <th className="px-4 py-2 text-right">Win Rate</th>
-                    <th className="px-4 py-2 text-right">Profit Factor</th>
-                    <th className="px-4 py-2 text-right">Candles to BK</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {Object.entries(statistics.byTimeframe || {}).map(([timeframe, stats]: [string, any]) => (
-                    <tr key={timeframe} className="border-t">
-                      <td className="px-4 py-2 font-medium">{timeframe}</td>
-                      <td className="px-4 py-2 text-right">{stats.totalTrades}</td>
-                      <td className="px-4 py-2 text-right">{stats.winRate.toFixed(1)}%</td>
-                      <td className="px-4 py-2 text-right">{stats.profitFactor.toFixed(2)}</td>
-                      <td className="px-4 py-2 text-right">{stats.averageCandlesToBreakout.toFixed(1)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Backtest Results */}
+      {/* Backtest Results Table */}
       {backtestResults.length > 0 && (
         <div className="bg-white p-4 rounded shadow">
           <h3 className="text-lg font-semibold mb-4">Backtest Results</h3>
@@ -877,21 +752,25 @@ const PolygonBacktestDashboard: React.FC = () => {
               </thead>
               <tbody>
                 {backtestResults.map((result, index) => (
-                  <tr key={index} className="border-t">
+                  <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                     <td className="px-4 py-2 font-medium">{result.symbol}</td>
-                    <td className="px-4 py-2">{result.patternType}</td>
+                    <td className="px-4 py-2">{result.pattern_type}</td>
                     <td className="px-4 py-2">{result.timeframe}</td>
-                    <td className="px-4 py-2 text-right">${result.entryPrice.toFixed(2)}</td>
-                    <td className="px-4 py-2 text-right">${result.actualExitPrice.toFixed(2)}</td>
-                    <td className={`px-4 py-2 text-right ${result.profitLossPercent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      {result.profitLossPercent.toFixed(2)}%
+                    <td className="px-4 py-2 text-right">${result.entry_price.toFixed(2)}</td>
+                    <td className="px-4 py-2 text-right">${result.exit_price ? result.exit_price.toFixed(2) : 'N/A'}</td>
+                    <td className={`px-4 py-2 text-right font-medium ${result.profit_loss_percent && result.profit_loss_percent >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {result.profit_loss_percent ? (result.profit_loss_percent >= 0 ? '+' : '') + result.profit_loss_percent.toFixed(2) + '%' : 'N/A'}
                     </td>
                     <td className="px-4 py-2 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs ${result.successful ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                        {result.successful ? 'Win' : 'Loss'}
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        result.result === 'win' ? 'bg-green-100 text-green-800' : 
+                        result.result === 'loss' ? 'bg-red-100 text-red-800' : 
+                        'bg-yellow-100 text-yellow-800'
+                      }`}>
+                        {result.result === 'win' ? 'WIN' : result.result === 'loss' ? 'LOSS' : 'PENDING'}
                       </span>
                     </td>
-                    <td className="px-4 py-2 text-right">{result.candlesToBreakout}</td>
+                    <td className="px-4 py-2 text-right">---</td>
                   </tr>
                 ))}
               </tbody>
@@ -900,28 +779,13 @@ const PolygonBacktestDashboard: React.FC = () => {
         </div>
       )}
       
-      <div className="mt-8 p-4 bg-gray-100 rounded">
-        <h3 className="text-lg font-semibold mb-2">Backtest Information</h3>
-        <p>This backtesting system uses Polygon.io historical data for accurate performance analysis.</p>
-        <p className="mt-2">The "Average Candles to Breakout" metric shows how many candles it typically takes for a pattern to reach its target, helping you position your trades effectively.</p>
-        <p className="mt-2">Win Rate and Profit Factor metrics help you identify the most reliable pattern types and timeframes for your trading strategy.</p>
-        <p className="mt-2">You can generate mock patterns to test the backtesting system without real pattern data.</p>
-        <p className="mt-2">Export functionality allows you to save your backtest results for further analysis in other tools.</p>
-      </div>
-
-      {/* Notification */}
-      <Snackbar
-        open={!!notification}
-        autoHideDuration={6000}
-        onClose={handleCloseNotification}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        {notification && (
+      {notification && (
+        <Snackbar open={true} autoHideDuration={6000} onClose={handleCloseNotification}>
           <Alert onClose={handleCloseNotification} severity={notification.type} sx={{ width: '100%' }}>
             {notification.message}
           </Alert>
-        )}
-      </Snackbar>
+        </Snackbar>
+      )}
     </div>
   );
 };

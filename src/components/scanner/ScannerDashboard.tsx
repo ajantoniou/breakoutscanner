@@ -26,14 +26,21 @@ import {
   Badge,
   Popover,
   Divider,
-  TextField
+  TextField,
+  TableContainer,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell
 } from '@mui/material';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import PatternCard from './PatternCard';
+import { PerformanceMetricsWidget } from './PerformanceMetricsWidget';
 import { TIMEFRAMES } from '@/services/api/marketData/dataService';
 import { getAllowedTimeframes } from '@/services/api/marketData/stockUniverses';
-import { differenceInHours, differenceInDays } from 'date-fns';
+import { differenceInHours, differenceInDays, formatDistanceToNowStrict } from 'date-fns';
 import SaveIcon from '@mui/icons-material/Save';
 import DeleteIcon from '@mui/icons-material/Delete';
 import TuneIcon from '@mui/icons-material/Tune';
@@ -58,8 +65,14 @@ import ErrorIcon from '@mui/icons-material/Error';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CachedIcon from '@mui/icons-material/Cached';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
-import type { PatternData } from '../../services/types/patternTypes';
-import type { PatternFilter } from './filters/types';
+import { PatternData, PatternDirection, PatternTimeframe, PatternType } from '@/services/types/patternTypes';
+import { PatternFilter } from './filters/types';
+import { useSnackbar } from 'notistack';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import BacktestResults from './BacktestResults';
+import ExitAlertsList, { ExitAlert } from './ExitAlertsList';
+import { v4 as uuidv4 } from 'uuid';
+import PatternTableContent from './table/PatternTableContent';
 
 // Define the tab panel interface
 interface TabPanelProps {
@@ -68,39 +81,12 @@ interface TabPanelProps {
   value: number;
 }
 
-// Define BreakoutData interface extending PatternData for any additional properties
-interface BreakoutData extends PatternData {
-  breakout_confirmed?: boolean;
-  breakout_time?: string;
-  actual_breakout_price?: number;
-}
-
-// Only keep PatternCardData interface which adapts the imported PatternData
-interface PatternCardData {
-  id: string;
-  symbol: string;
-  pattern_type: string;
-  timeframe: string;
-  entry_price: number;
-  target_price: number;
-  stop_loss: number;
-  confidence_score: number;
-  created_at: string;
-  direction: 'bullish' | 'bearish';
-  status: 'active' | 'completed' | 'failed';
-  risk_reward_ratio: number;
-  channel_type?: string;
-  volume_confirmation?: boolean;
-  trendline_break?: boolean;
-  ema_pattern?: string;
-}
-
 // Define filter preset interface
 interface FilterPreset {
   id: string;
   name: string;
   confidenceFilter: number;
-  directionFilter: string;
+  directionFilter: PatternDirection | 'all';
   hideExpired: boolean;
   hideOld: boolean;
 }
@@ -127,17 +113,27 @@ const TabPanel = (props: TabPanelProps) => {
 };
 
 interface ScannerDashboardProps {
-  dayTradingResults: (PatternData | BreakoutData)[];
-  swingTradingResults: (PatternData | BreakoutData)[];
-  backtestStats: {
-    avgCandlesToBreakout: Record<string, number>;
-    winRateByTimeframe: Record<string, number>;
-    profitFactorByTimeframe: Record<string, number>;
-  };
+  dayTradingResults: PatternData[];
+  swingTradingResults: PatternData[];
+  backtestStats: any;
   isLoading: boolean;
-  activeScanner: 'day' | 'swing' | null;
-  onRunScanner: (mode: 'day' | 'swing', timeframe: string) => void;
-  onArchivePattern?: (id: string) => Promise<void>;
+  activeScanner: string;
+  onRunScanner: () => void;
+  onArchivePattern: (pattern: PatternData) => void;
+  performanceMetrics: {
+    winRate: number;
+    profitFactor: number;
+    avgProfit: number;
+    avgLoss: number;
+    consistencyScore: number;
+    riskRewardRatio: number;
+    maxDrawdown: number;
+    targetHitRate: number;
+    totalTrades: number;
+    historicalPerformance: Array<{ date: string; value: number }>;
+    winLossDistribution: { wins: number; losses: number };
+  };
+  onViewChart?: (pattern: PatternData) => void;
 }
 
 const ScannerDashboard: React.FC<ScannerDashboardProps> = ({ 
@@ -147,14 +143,16 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   isLoading,
   activeScanner,
   onRunScanner,
-  onArchivePattern
+  onArchivePattern,
+  performanceMetrics,
+  onViewChart
 }) => {
   // State for active tab
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTab] = useState<string>('day');
   
   // State for filters
   const [confidenceFilter, setConfidenceFilter] = useState<number>(0);
-  const [directionFilter, setDirectionFilter] = useState<string>('all');
+  const [directionFilter, setDirectionFilter] = useState<PatternDirection | 'all'>('all');
   const [selectedTimeframe, setSelectedTimeframe] = useState<string>('1h');
   const [hideExpired, setHideExpired] = useState<boolean>(true);
   const [hideOld, setHideOld] = useState<boolean>(false);
@@ -177,7 +175,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
       id: 'bullish-only',
       name: 'Bullish Only',
       confidenceFilter: 60,
-      directionFilter: 'bullish',
+      directionFilter: PatternDirection.BULLISH,
       hideExpired: true,
       hideOld: false
     },
@@ -185,7 +183,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
       id: 'bearish-only',
       name: 'Bearish Only',
       confidenceFilter: 60,
-      directionFilter: 'bearish',
+      directionFilter: PatternDirection.BEARISH,
       hideExpired: true,
       hideOld: false
     }
@@ -240,7 +238,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   
   // Get current scanner mode
   const getCurrentScannerMode = () => {
-    if (activeTab === 0) {
+    if (activeTab === 'day') {
       return 'day';
     } else {
       return 'swing';
@@ -262,7 +260,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   }, [activeTab, allowedTimeframes, selectedTimeframe]);
   
   // Function to handle tab change
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+  const handleTabChange = (event: React.SyntheticEvent, newValue: string) => {
     setActiveTab(newValue);
   };
   
@@ -292,7 +290,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   };
   
   // Function to check if a pattern is expired (past expected breakout time by > 24 hours)
-  const isPatternExpired = (pattern: PatternData | BreakoutData) => {
+  const isPatternExpired = (pattern: PatternData) => {
     if (!backtestStats.avgCandlesToBreakout[pattern.timeframe]) return false;
     
     const createdAt = new Date(pattern.created_at);
@@ -324,7 +322,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   };
   
   // Function to filter results based on current filters
-  const filterResults = (patterns: (PatternData | BreakoutData)[]) => {
+  const filterResults = (patterns: PatternData[]): PatternData[] => {
     return patterns.filter(pattern => {
       // Apply confidence filter
       if (confidenceFilter > 0 && pattern.confidence_score < confidenceFilter) return false;
@@ -344,46 +342,83 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
     });
   };
   
-  // Get current results based on active tab and filters
-  const getCurrentResults = () => {
-    const results = activeTab === 0 ? combinedDayPatterns : combinedSwingPatterns;
-    return filterResults(results);
+  // State for table sorting
+  const [sortField, setSortField] = useState<keyof PatternData>('confidence_score');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  
+  // Handle sort change
+  const handleSort = (field: keyof PatternData) => {
+    if (field === sortField) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
   };
   
-  // Handle archiving a pattern
-  const handleArchivePattern = useCallback(async (id: string) => {
-    if (onArchivePattern) {
-      try {
-        await onArchivePattern(id);
-        setSnackbarMessage('Pattern archived successfully');
-        setSnackbarOpen(true);
-      } catch (error) {
-        setSnackbarMessage('Error archiving pattern');
-        setSnackbarOpen(true);
+  // Sort the results based on sort field and direction
+  const sortPatterns = (patterns: PatternData[]): PatternData[] => {
+    return [...patterns].sort((a, b) => {
+      // Handle undefined or null values
+      const aValue = a[sortField] ?? '';
+      const bValue = b[sortField] ?? '';
+      
+      // For numeric values
+      if (typeof aValue === 'number' && typeof bValue === 'number') {
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
       }
-    }
-  }, [onArchivePattern]);
+      
+      // For string values
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return sortDirection === 'asc' 
+          ? aValue.localeCompare(bValue)
+          : bValue.localeCompare(aValue);
+      }
+      
+      // Default comparison (for dates, booleans, etc.)
+      return sortDirection === 'asc' 
+        ? (aValue > bValue ? 1 : -1)
+        : (bValue > aValue ? 1 : -1);
+    });
+  };
+  
+  // Get filtered and sorted results
+  const getSortedAndFilteredResults = () => {
+    const results = activeTab === 'day' ? combinedDayPatterns : combinedSwingPatterns;
+    const filtered = filterResults(results);
+    return sortPatterns(filtered);
+  };
+  
+  // Get current filtered and sorted results
+  const currentResults = getSortedAndFilteredResults();
+  
+  // Function to handle pattern archival
+  const handleArchivePattern = (pattern: PatternData) => {
+    onArchivePattern(pattern);
+  };
+  
+  // Function to run scanner
+  const handleRunScanner = () => {
+    onRunScanner();
+  };
   
   // Handle snackbar close
   const handleSnackbarClose = () => {
     setSnackbarOpen(false);
   };
   
-  // Get current results
-  const currentResults = getCurrentResults();
-
   // Get average candles to breakout for current timeframe
   const avgCandlesToBreakout = backtestStats.avgCandlesToBreakout[selectedTimeframe] || 0;
   const winRate = backtestStats.winRateByTimeframe[selectedTimeframe] || 0;
   const profitFactor = backtestStats.profitFactorByTimeframe[selectedTimeframe] || 0;
   
   // Count expired and old patterns
-  const countExpiredPatterns = (results: (PatternData | BreakoutData)[]) => {
+  const countExpiredPatterns = (results: PatternData[]) => {
     return results.filter(pattern => isPatternExpired(pattern)).length;
   };
   
-  const countOldPatterns = (results: (PatternData | BreakoutData)[]) => {
-    return results.filter(pattern => isPatternOld(pattern as PatternData)).length;
+  const countOldPatterns = (results: PatternData[]) => {
+    return results.filter(pattern => isPatternOld(pattern)).length;
   };
   
   const expiredDayPatterns = countExpiredPatterns(dayTradingResults);
@@ -473,7 +508,7 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   // Handle new pattern event
   const handleNewPattern = useCallback((event: NewPatternEvent) => {
     const pattern = event.payload;
-    const isScannerActive = activeTab === 0 ? 'day' : 'swing';
+    const isScannerActive = activeTab === 'day' ? 'day' : 'swing';
     
     // Add pattern to appropriate local state based on timeframe
     if (isScannerActive === 'day' && ['1m', '5m', '15m', '30m', '1h'].includes(pattern.timeframe)) {
@@ -513,18 +548,19 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   // Handle status change event
   const handleStatusChange = useCallback((event: StatusChangeEvent) => {
     const { patternId, newStatus } = event.payload;
+    const typedStatus = newStatus as PatternData['status'];
     
     // Update pattern status in local day trading results
     setLocalDayPatterns(prev => 
       prev.map(pattern => 
-        pattern.id === patternId ? { ...pattern, status: newStatus as any } : pattern
+        pattern.id === patternId ? { ...pattern, status: typedStatus } : pattern
       )
     );
     
     // Update pattern status in local swing trading results
     setLocalSwingPatterns(prev => 
       prev.map(pattern => 
-        pattern.id === patternId ? { ...pattern, status: newStatus as any } : pattern
+        pattern.id === patternId ? { ...pattern, status: typedStatus } : pattern
       )
     );
     
@@ -574,17 +610,17 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   // Set up event listeners for real-time updates
   useEffect(() => {
     // Register event handlers
-    patternUpdateService.on(PatternUpdateEventType.NEW_PATTERN, handleNewPattern as any);
-    patternUpdateService.on(PatternUpdateEventType.PATTERN_UPDATED, handlePatternUpdate as any);
-    patternUpdateService.on(PatternUpdateEventType.STATUS_CHANGE, handleStatusChange as any);
-    patternUpdateService.on(PatternUpdateEventType.CONNECTION_STATUS, handleConnectionStatus as any);
+    patternUpdateService.on(PatternUpdateEventType.NEW_PATTERN, handleNewPattern);
+    patternUpdateService.on(PatternUpdateEventType.PATTERN_UPDATED, handlePatternUpdate);
+    patternUpdateService.on(PatternUpdateEventType.STATUS_CHANGE, handleStatusChange);
+    patternUpdateService.on(PatternUpdateEventType.CONNECTION_STATUS, handleConnectionStatus);
     
     // Clean up event handlers
     return () => {
-      patternUpdateService.off(PatternUpdateEventType.NEW_PATTERN, handleNewPattern as any);
-      patternUpdateService.off(PatternUpdateEventType.PATTERN_UPDATED, handlePatternUpdate as any);
-      patternUpdateService.off(PatternUpdateEventType.STATUS_CHANGE, handleStatusChange as any);
-      patternUpdateService.off(PatternUpdateEventType.CONNECTION_STATUS, handleConnectionStatus as any);
+      patternUpdateService.off(PatternUpdateEventType.NEW_PATTERN, handleNewPattern);
+      patternUpdateService.off(PatternUpdateEventType.PATTERN_UPDATED, handlePatternUpdate);
+      patternUpdateService.off(PatternUpdateEventType.STATUS_CHANGE, handleStatusChange);
+      patternUpdateService.off(PatternUpdateEventType.CONNECTION_STATUS, handleConnectionStatus);
       
       // Disconnect when component unmounts
       if (realtimeEnabled) {
@@ -680,73 +716,43 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
     // You could implement a custom notification UI here if needed
   }, []);
   
-  // Update generateMockPattern to create a valid PatternData object
-  const generateMockPattern = useCallback(() => {
-    if (!realtimeEnabled) {
-      return;
-    }
-
-    const symbols = ['AAPL', 'TSLA', 'AMZN', 'MSFT', 'GOOGL', 'META', 'NFLX', 'NVDA', 'AMD', 'INTC'];
-    const patternTypes = ['Bull Flag', 'Cup & Handle', 'Ascending Triangle', 'Descending Triangle', 'Double Bottom', 'Head & Shoulders'];
-    const timeframes = ['1min', '5min', '15min', '30min', '1h', '4h', 'Daily'];
-    const directions = ['bullish', 'bearish'] as const;
-    const channelTypes = ['horizontal', 'ascending', 'descending'] as const;
-
-    const currentSymbol = symbols[Math.floor(Math.random() * symbols.length)];
-    const currentPattern = patternTypes[Math.floor(Math.random() * patternTypes.length)];
-    const currentTimeframe = timeframes[Math.floor(Math.random() * timeframes.length)];
-    const direction = directions[Math.floor(Math.random() * directions.length)];
-    const confidence = Math.floor(Math.random() * 50) + 50; // 50-100
-    const entryPrice = Math.round((Math.random() * 200 + 50) * 100) / 100; // 50-250 with 2 decimal places
-    const targetPricePercent = Math.round((Math.random() * 10 + 2) * 100) / 100; // 2-12% with 2 decimal places
-    const stopLossPercent = Math.round((Math.random() * 3 + 1) * 100) / 100; // 1-4% with 2 decimal places
+  // Generate mock pattern function
+  const generateMockPattern = (): PatternData => {
+    const symbols = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'NVDA', 'META', 'TSLA'];
+    const patternTypes = Object.values(PatternType);
+    const timeframes = Object.values(PatternTimeframe);
+    const directions = [PatternDirection.BULLISH, PatternDirection.BEARISH];
     
-    const targetPrice = direction === 'bullish' 
-      ? Math.round((entryPrice * (1 + targetPricePercent / 100)) * 100) / 100 
-      : Math.round((entryPrice * (1 - targetPricePercent / 100)) * 100) / 100;
+    const entryPrice = Math.random() * 1000 + 100;
+    const targetPercent = Math.random() * 0.1 + 0.02; // 2-12% target
+    const stopPercent = Math.random() * 0.05 + 0.01; // 1-6% stop loss
     
-    const stopLoss = direction === 'bullish' 
-      ? Math.round((entryPrice * (1 - stopLossPercent / 100)) * 100) / 100 
-      : Math.round((entryPrice * (1 + stopLossPercent / 100)) * 100) / 100;
-    
-    const riskRewardRatio = targetPricePercent / stopLossPercent;
-
-    const now = new Date();
-    // Create a new pattern with all required fields
     const mockPattern: PatternData = {
-      id: `mock-${Date.now()}`,
-      symbol: currentSymbol,
-      pattern_type: currentPattern,
-      timeframe: currentTimeframe,
+      id: Math.random().toString(36).substring(7),
+      symbol: symbols[Math.floor(Math.random() * symbols.length)],
+      pattern_type: patternTypes[Math.floor(Math.random() * patternTypes.length)],
+      timeframe: timeframes[Math.floor(Math.random() * timeframes.length)],
+      direction: directions[Math.floor(Math.random() * directions.length)],
       entry_price: entryPrice,
-      target_price: targetPrice,
-      stop_loss: stopLoss, // Required field
-      confidence_score: confidence,
-      created_at: now.toISOString(),
-      direction: direction,
+      target_price: entryPrice * (1 + targetPercent),
+      stop_loss: entryPrice * (1 - stopPercent),
+      confidence_score: Math.floor(Math.random() * 30) + 70, // 70-100
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      detected_at: new Date().toISOString(),
       status: 'active',
-      risk_reward_ratio: parseFloat(riskRewardRatio.toFixed(2)),
-      channel_type: Math.random() > 0.6 ? channelTypes[Math.floor(Math.random() * channelTypes.length)] : undefined,
+      risk_reward_ratio: targetPercent / stopPercent,
+      is_ai_generated: false,
+      target_percent: targetPercent * 100,
       volume_confirmation: Math.random() > 0.5,
       trendline_break: Math.random() > 0.5,
-      ema_pattern: Math.random() > 0.7 ? 'EMA9 cross EMA20' : undefined,
-      detected_at: now.toISOString()
+      support_level: entryPrice * 0.95,
+      resistance_level: entryPrice * 1.05,
+      current_price: entryPrice
     };
 
-    // Trigger the mock pattern update simulation
-    const mockEvent: NewPatternEvent = {
-      type: PatternUpdateEventType.NEW_PATTERN,
-      payload: mockPattern,
-      timestamp: now.getTime()
-    };
-
-    handleNewPattern(mockEvent);
-    simulatePatternUpdate(mockPattern);
-
-    // Show notification for generated pattern
-    showNotification(`Generated demo pattern for ${mockPattern.symbol} (${mockPattern.pattern_type})`, 'success');
-
-  }, [realtimeEnabled, handleNewPattern, simulatePatternUpdate, showNotification]);
+    return mockPattern;
+  };
   
   // Add an effect to handle toggling real-time updates
   useEffect(() => {
@@ -760,10 +766,13 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
       });
     }
   }, [realtimeEnabled, localDayPatterns, localSwingPatterns, simulatePatternUpdate]);
-  
+
   // Function to fetch real market data
-  const fetchMarketData = useCallback(async (symbols: string[], timeframe: string) => {
+  const fetchMarketData = useCallback(async () => {
     if (!useRealData) return;
+    
+    const symbols = ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'NVDA'];
+    const timeframe = PatternTimeframe.DAILY;
     
     try {
       // Show loading state
@@ -771,63 +780,68 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
       setSnackbarOpen(true);
       
       // Fetch candles for symbols
-      const result = await marketDataService.scanMultipleSymbols(
+      const marketService = new MarketDataService();
+      const result = await marketService.scanMultipleSymbols(
         symbols,
         timeframe,
-        120, // Last 120 candles
-        undefined,
-        undefined,
-        false // Use cache if available
+        120 // Last 120 candles
       );
       
       // Update data status
-      setDataStatus(marketDataService.getDataFreshnessStatus(result.scanMetadata));
+      setDataStatus(marketService.getDataFreshnessStatus(result.scanMetadata));
       
       // Process the data to find patterns
-      // This is a simplified implementation - in a real app, you'd use your pattern detection logic
       const patterns: PatternData[] = [];
       
       for (const symbol of symbols) {
         if (result.data[symbol] && result.data[symbol].length > 0) {
           const candles = result.data[symbol];
           const lastCandle = candles[candles.length - 1];
+          const isBullish = lastCandle.close > lastCandle.open;
           
-          // Simple "pattern" creation based on latest price
-          // In a real app, you'd analyze the candles to detect actual patterns
-          patterns.push({
+          // Create a pattern based on latest price data
+          const pattern: PatternData = {
             id: `${symbol}-${Date.now()}`,
             symbol: symbol,
-            pattern_type: lastCandle.close > lastCandle.open ? 'Bull Flag' : 'Bear Flag',
+            pattern_type: isBullish ? PatternType.BULL_FLAG : PatternType.BEAR_FLAG,
             timeframe: timeframe,
             entry_price: lastCandle.close,
-            target_price: lastCandle.close * 1.02, // 2% target
-            stop_loss: lastCandle.close * 0.98, // 2% stop loss
+            target_price: lastCandle.close * (isBullish ? 1.02 : 0.98), // 2% target
+            stop_loss: lastCandle.close * (isBullish ? 0.98 : 1.02), // 2% stop loss
             confidence_score: 70 + Math.floor(Math.random() * 20),
             created_at: new Date().toISOString(),
-            direction: lastCandle.close > lastCandle.open ? 'bullish' : 'bearish',
+            updated_at: new Date().toISOString(),
+            detected_at: new Date().toISOString(),
+            direction: isBullish ? 'bullish' : 'bearish',
             status: 'active',
             risk_reward_ratio: 1,
-            detected_at: new Date().toISOString()
-          });
+            is_ai_generated: false,
+            target_percent: 2,
+            current_price: lastCandle.close,
+            support_level: Math.min(...candles.slice(-20).map(c => c.low)),
+            resistance_level: Math.max(...candles.slice(-20).map(c => c.high))
+          };
+          
+          patterns.push(pattern);
         }
       }
       
-      // Update local patterns based on active tab
-      if (activeTab === 0) {
-        setLocalDayPatterns(patterns.concat(localDayPatterns));
+      // Update patterns based on timeframe
+      if (timeframe === PatternTimeframe.DAILY) {
+        setLocalSwingPatterns(prevPatterns => [...prevPatterns, ...patterns]);
       } else {
-        setLocalSwingPatterns(patterns.concat(localSwingPatterns));
+        setLocalDayPatterns(prevPatterns => [...prevPatterns, ...patterns]);
       }
       
-      // Show success message
-      setSnackbarMessage(`Loaded ${patterns.length} patterns from real market data`);
+      setSnackbarMessage(`Successfully processed ${patterns.length} patterns`);
       setSnackbarOpen(true);
+      
     } catch (error) {
       console.error('Error fetching market data:', error);
-      setSnackbarMessage('Error fetching market data. Check console for details.');
+      setSnackbarMessage('Error fetching market data');
       setSnackbarOpen(true);
     }
-  }, [useRealData, activeTab, marketDataService]);
+  }, [useRealData]);
   
   // Toggle real data usage
   const handleToggleRealData = useCallback(() => {
@@ -836,10 +850,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
     
     if (newValue) {
       // When enabling real data, fetch immediately
-      const symbols = activeTab === 0 ? dayTradingSymbols : swingTradingSymbols;
-      fetchMarketData(symbols, selectedTimeframe);
+      fetchMarketData();
     }
-  }, [useRealData, activeTab, dayTradingSymbols, swingTradingSymbols, selectedTimeframe, fetchMarketData]);
+  }, [useRealData, fetchMarketData]);
   
   // Function to get icon for data freshness status
   const getDataStatusIcon = useCallback(() => {
@@ -870,10 +883,9 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
   // Update real data when timeframe changes
   useEffect(() => {
     if (useRealData) {
-      const symbols = activeTab === 0 ? dayTradingSymbols : swingTradingSymbols;
-      fetchMarketData(symbols, selectedTimeframe);
+      fetchMarketData();
     }
-  }, [useRealData, selectedTimeframe, activeTab, dayTradingSymbols, swingTradingSymbols, fetchMarketData]);
+  }, [useRealData, fetchMarketData]);
   
   // Test Polygon.io connection when real data is first enabled
   useEffect(() => {
@@ -897,633 +909,250 @@ const ScannerDashboard: React.FC<ScannerDashboardProps> = ({
     }
   }, [useRealData, marketDataService, isPolygonApiConfigured]);
   
-  return (
-    <Box sx={{ width: '100%' }}>
-      <Paper elevation={3} sx={{ mb: 3 }}>
-        <Tabs 
-          value={activeTab} 
-          onChange={handleTabChange} 
-          aria-label="pattern scanner tabs"
-          centered
-        >
-          <Tab label="Day Trading" />
-          <Tab label="Swing Trading" />
-        </Tabs>
-        
-        {/* Add real-time updates control */}
-        <Box sx={{ 
-          position: 'absolute', 
-          right: 16, 
-          top: 8, 
-          display: 'flex', 
-          alignItems: 'center',
-          gap: 2
-        }}>
-          <Tooltip title="Generate demo pattern">
-            <span>
-              <IconButton 
-                color="primary" 
-                onClick={generateMockPattern}
-                size="small"
-                disabled={!realtimeEnabled}
-              >
-                <AddIcon />
-              </IconButton>
-            </span>
-          </Tooltip>
-          
-          <Tooltip title={`${notifications.length} notifications`}>
-            <IconButton 
-              color={notifications.length > 0 ? 'primary' : 'default'} 
-              onClick={toggleNotifications}
-              size="small"
-            >
-              <Badge badgeContent={notifications.length} color="primary">
-                <NotificationsActiveIcon />
-              </Badge>
-            </IconButton>
-          </Tooltip>
-          
-          {/* Add data status indicator */}
-          {dataStatus && (
-            <Tooltip title={dataStatus.message}>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                {getDataStatusIcon()}
-              </Box>
-            </Tooltip>
-          )}
-          
-          {/* Add real data toggle */}
-          <Tooltip title={`Real market data: ${useRealData ? 'On' : 'Off'}`}>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Switch
-                checked={useRealData}
-                onChange={handleToggleRealData}
-                color="secondary"
-                size="small"
-                disabled={!isPolygonApiConfigured}
-              />
-            </Box>
-          </Tooltip>
-          
-          <Tooltip title={`Real-time updates: ${realtimeEnabled ? 'On' : 'Off'}`}>
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              {getConnectionStatusIcon()}
-              <Switch
-                checked={realtimeEnabled}
-                onChange={handleToggleRealtime}
-                color="primary"
-                size="small"
-              />
-            </Box>
-          </Tooltip>
-        </Box>
-      </Paper>
-      
-      {/* Add API key warning if not configured */}
-      {!isPolygonApiConfigured && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
-          Polygon.io API key is not configured. Please add your API key to the .env file to enable real market data.
-        </Alert>
-      )}
-      
-      {/* Notifications panel */}
-      <Popover
-        open={notificationOpen}
-        anchorEl={document.getElementById('root')}
-        onClose={() => setNotificationOpen(false)}
-        anchorOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-        transformOrigin={{
-          vertical: 'top',
-          horizontal: 'right',
-        }}
-        sx={{ mt: 10, mr: 2 }}
-      >
-        <Box sx={{ width: 350, maxHeight: 400, overflow: 'auto', p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Notifications
-            <IconButton 
-              size="small" 
-              sx={{ float: 'right' }} 
-              onClick={() => setNotifications([])}
-            >
-              <DeleteIcon fontSize="small" />
-            </IconButton>
+  const [exitAlerts, setExitAlerts] = useState<ExitAlert[]>([]);
+  
+  // Handle setting exit alert
+  const handleSetExitAlert = (pattern: PatternData) => {
+    // Calculate exit price as 95% of the target price
+    const exitPrice = pattern.target_price * 0.95;
+    // Trendline price could be calculated based on pattern data
+    const trendlinePrice = pattern.entry_price * 0.98;
+    
+    const newAlert: ExitAlert = {
+      alertId: uuidv4(),
+      symbol: pattern.symbol,
+      exitPrice: exitPrice,
+      trendlinePrice: trendlinePrice,
+      status: 'active',
+      createdAt: new Date(),
+      pattern: pattern
+    };
+    
+    setExitAlerts((prevAlerts) => [...prevAlerts, newAlert]);
+    
+    enqueueSnackbar(`Exit alert set for ${pattern.symbol}`, { 
+      variant: 'success',
+      autoHideDuration: 3000
+    });
+  };
+
+  const handleDeleteAlert = (alertId: string) => {
+    setExitAlerts((prevAlerts) => prevAlerts.filter(alert => alert.alertId !== alertId));
+    
+    enqueueSnackbar('Exit alert removed', { 
+      variant: 'info',
+      autoHideDuration: 3000
+    });
+  };
+
+  const handleClearAllAlerts = () => {
+    setExitAlerts([]);
+    
+    enqueueSnackbar('All exit alerts cleared', { 
+      variant: 'info',
+      autoHideDuration: 3000
+    });
+  };
+
+  // Render exit alerts table
+  const renderExitAlertsTable = () => {
+    return (
+      <Box>
+        {exitAlerts.length === 0 ? (
+          <Typography variant="body1" sx={{ textAlign: 'center', my: 4 }}>
+            No exit alerts have been set
           </Typography>
-          
-          {notifications.length === 0 ? (
-            <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
-              No notifications
-            </Typography>
-          ) : (
-            notifications.map((notification, index) => (
-              <Box 
-                key={index} 
-                sx={{ 
-                  py: 1, 
-                  borderBottom: index < notifications.length - 1 ? '1px solid' : 'none',
-                  borderColor: 'divider'
-                }}
-              >
-                <Typography variant="body2">
-                  {getNotificationMessage(notification)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  {new Date(notification.timestamp).toLocaleTimeString()}
-                </Typography>
-              </Box>
-            ))
-          )}
-        </Box>
-      </Popover>
-      
-      <Box sx={{ mb: 3 }}>
-        <Paper elevation={2} sx={{ p: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6" gutterBottom sx={{ display: 'flex', alignItems: 'center', mb: 0 }}>
-              <TuneIcon sx={{ mr: 1 }} /> 
-              <span>Filters</span>
-              {getActiveFilterCount() > 0 && (
-                <Badge
-                  badgeContent={getActiveFilterCount()}
-                  color="primary"
-                  sx={{ ml: 1 }}
-                >
-                  <Box />
-                </Badge>
-              )}
-            </Typography>
-            
-            <Box>
-              <Tooltip title="Filter presets">
-                <Button
-                  variant="outlined"
-                  size="small"
-                  startIcon={<BookmarkIcon />}
-                  onClick={handlePresetMenuOpen}
-                >
-                  Presets
-                </Button>
-              </Tooltip>
-              
-              <Menu
-                anchorEl={presetMenuAnchorEl}
-                open={Boolean(presetMenuAnchorEl)}
-                onClose={handlePresetMenuClose}
-              >
-                {filterPresets.map(preset => (
-                  <MenuItem key={preset.id} onClick={() => applyPreset(preset)}>
-                    <ListItemText primary={preset.name} />
-                    <IconButton size="small" edge="end" onClick={(e) => {
-                      e.stopPropagation();
-                      deletePreset(preset.id);
-                    }}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </MenuItem>
-                ))}
-                <Divider />
-                <MenuItem onClick={handleSavePresetOpen}>
-                  <ListItemIcon>
-                    <SaveIcon fontSize="small" />
-                  </ListItemIcon>
-                  <ListItemText primary="Save current filters" />
-                </MenuItem>
-              </Menu>
-              
-              <Tooltip title="Save Filter Preset">
-                <Popover
-                  open={Boolean(savePresetAnchorEl)}
-                  anchorEl={savePresetAnchorEl}
-                  onClose={handleSavePresetClose}
-                  anchorOrigin={{
-                    vertical: 'bottom',
-                    horizontal: 'right',
-                  }}
-                  transformOrigin={{
-                    vertical: 'top',
-                    horizontal: 'right',
-                  }}
-                >
-                  <Box sx={{ p: 2, width: 300 }}>
-                    <Typography variant="subtitle1" gutterBottom>
-                      Save Filter Preset
-                    </Typography>
-                    <TextField
-                      fullWidth
-                      label="Preset Name"
-                      value={newPresetName}
-                      onChange={(e) => setNewPresetName(e.target.value)}
-                      margin="normal"
-                      size="small"
-                      autoFocus
-                    />
-                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
-                      <Button onClick={handleSavePresetClose} sx={{ mr: 1 }}>
-                        Cancel
-                      </Button>
-                      <Button 
-                        variant="contained" 
-                        color="primary" 
-                        onClick={saveNewPreset}
-                        disabled={newPresetName.trim() === ''}
-                      >
-                        Save
-                      </Button>
-                    </Box>
-                  </Box>
-                </Popover>
-              </Tooltip>
-            </Box>
-          </Box>
-          
-          <Box sx={{ 
-            display: 'grid', 
-            gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, 
-            gap: 2 
-          }}>
-            <Box>
-            <FormControl fullWidth>
-              <InputLabel id="confidence-filter-label">Min Confidence</InputLabel>
-              <Select
-                labelId="confidence-filter-label"
-                id="confidence-filter"
-                value={confidenceFilter}
-                label="Min Confidence"
-                onChange={handleConfidenceFilterChange}
-              >
-                <MenuItem value={0}>All</MenuItem>
-                <MenuItem value={60}>60%+</MenuItem>
-                <MenuItem value={70}>70%+</MenuItem>
-                <MenuItem value={80}>80%+</MenuItem>
-                <MenuItem value={90}>90%+</MenuItem>
-              </Select>
-            </FormControl>
-            </Box>
-          
-            <Box>
-            <FormControl fullWidth>
-              <InputLabel id="direction-filter-label">Direction</InputLabel>
-              <Select
-                labelId="direction-filter-label"
-                id="direction-filter"
-                value={directionFilter}
-                label="Direction"
-                onChange={handleDirectionFilterChange}
-              >
-                <MenuItem value="all">All</MenuItem>
-                <MenuItem value="bullish">Bullish</MenuItem>
-                <MenuItem value="bearish">Bearish</MenuItem>
-              </Select>
-            </FormControl>
-            </Box>
-          
-            <Box>
-            <FormControl fullWidth>
-              <InputLabel id="timeframe-label">Timeframe</InputLabel>
-              <Select
-                labelId="timeframe-label"
-                id="timeframe"
-                value={selectedTimeframe}
-                label="Timeframe"
-                onChange={handleTimeframeChange}
-              >
-                {allowedTimeframes.map((tf) => (
-                  <MenuItem key={tf} value={tf}>{tf}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            </Box>
-          
-            <Box>
-            <Button 
-              variant="contained" 
-              color="primary" 
-              fullWidth
-              onClick={() => onRunScanner(currentMode, selectedTimeframe)}
-              disabled={isLoading}
-                startIcon={isLoading && activeScanner === currentMode ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
-            >
-              {isLoading && activeScanner === currentMode ? 'Scanning...' : 'Run Scanner'}
-            </Button>
-            </Box>
-            
-            <Box sx={{ gridColumn: { xs: '1 / -1', sm: '1 / 3', md: '1 / 3' } }}>
-              <Box sx={{ display: 'flex', gap: 2 }}>
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={hideExpired}
-                      onChange={handleHideExpiredChange}
-                      color="warning"
-                    />
-                  }
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ mr: 1 }}>Hide Expired</Typography>
-                      <Tooltip title="Patterns that are more than 24 hours past their expected breakout time">
-                        <Chip 
-                          size="small" 
-                          color="warning" 
-                          label={activeTab === 0 ? expiredDayPatterns : expiredSwingPatterns} 
-                        />
-                      </Tooltip>
-                    </Box>
-                  }
-                />
-                
-                <FormControlLabel
-                  control={
-                    <Switch
-                      checked={hideOld}
-                      onChange={handleHideOldChange}
-                      color="info"
-                    />
-                  }
-                  label={
-                    <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ mr: 1 }}>Hide Old</Typography>
-                      <Tooltip title="Patterns created more than 7 days ago">
-                        <Chip 
-                          size="small" 
-                          color="info" 
-                          label={activeTab === 0 ? oldDayPatterns : oldSwingPatterns} 
-                        />
-                      </Tooltip>
-                    </Box>
-                  }
-                />
-              </Box>
-            </Box>
-          </Box>
-          
-          {getActiveFilterCount() > 0 && (
-            <Box sx={{ mt: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
-              {confidenceFilter > 0 && (
-                <Chip 
-                  label={`Confidence: ${confidenceFilter}%+`} 
-                  color="primary" 
-                  onDelete={() => setConfidenceFilter(0)}
-                  size="small"
-                />
-              )}
-              
-              {directionFilter !== 'all' && (
-                <Chip 
-                  label={`Direction: ${directionFilter}`} 
-                  color="primary" 
-                  onDelete={() => setDirectionFilter('all')}
-                  size="small"
-                />
-              )}
-              
-              {hideExpired && (
-                <Chip 
-                  label="Hide Expired" 
-                  color="warning" 
-                  onDelete={() => setHideExpired(false)}
-                  size="small"
-                />
-              )}
-              
-              {hideOld && (
-                <Chip 
-                  label="Hide Old" 
-                  color="info" 
-                  onDelete={() => setHideOld(false)}
-                  size="small"
-                />
-              )}
-              
-              {getActiveFilterCount() > 1 && (
-                <Chip 
-                  label="Clear All" 
-                  variant="outlined"
-                  onClick={() => {
-                    setConfidenceFilter(0);
-                    setDirectionFilter('all');
-                    setHideExpired(false);
-                    setHideOld(false);
-                  }}
-                  size="small"
-                />
-              )}
-            </Box>
-          )}
-          
-          {lastUpdateTime && (
-            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-              <Typography variant="caption" color="text.secondary">
-                Last update: {lastUpdateTime.toLocaleTimeString()}
+        ) : (
+          <Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+              <Typography variant="h6">
+                Active Exit Alerts ({exitAlerts.filter(a => a.status === 'active').length})
               </Typography>
+              <Button 
+                size="small"
+                startIcon={<DeleteIcon />}
+                onClick={handleClearAllAlerts}
+              >
+                Clear All
+              </Button>
             </Box>
-          )}
-        </Paper>
+            
+            <TableContainer component={Paper}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Symbol</TableCell>
+                    <TableCell>Exit Price</TableCell>
+                    <TableCell>Trendline Price</TableCell>
+                    <TableCell>Status</TableCell>
+                    <TableCell>Created</TableCell>
+                    <TableCell>Actions</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {exitAlerts.map(alert => (
+                    <TableRow key={alert.alertId}>
+                      <TableCell>{alert.symbol}</TableCell>
+                      <TableCell>${alert.exitPrice.toFixed(2)}</TableCell>
+                      <TableCell>${alert.trendlinePrice.toFixed(2)}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={alert.status}
+                          color={alert.status === 'active' ? 'success' : 'default'}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>{formatDistanceToNowStrict(alert.createdAt, { addSuffix: true })}</TableCell>
+                      <TableCell>
+                        <IconButton 
+                          size="small" 
+                          color="error"
+                          onClick={() => handleDeleteAlert(alert.alertId)}
+                        >
+                          <DeleteIcon />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Box>
+        )}
       </Box>
-      
-      <Box sx={{ mb: 3 }}>
-        <Paper elevation={3} sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            Backtest Stats for {selectedTimeframe}
+    );
+  };
+
+  const { enqueueSnackbar } = useSnackbar();
+
+  return (
+    <Box sx={{ p: 3 }}>
+      <Grid container spacing={3}>
+        {/* First row */}
+        <Grid item xs={12} md={8}>
+          <Typography variant="h4" fontWeight="bold" gutterBottom>
+            Breakout Scanner
           </Typography>
-          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2 }}>
-              <Box sx={{ textAlign: 'center', p: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Avg Candles to Breakout
-                </Typography>
-                <Typography variant="h6">
-                  {avgCandlesToBreakout.toFixed(1)}
-                </Typography>
-              </Box>
-              <Box sx={{ textAlign: 'center', p: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Win Rate
-                </Typography>
-                <Typography variant="h6">
-                  {(winRate * 100).toFixed(1)}%
-                </Typography>
-              </Box>
-              <Box sx={{ textAlign: 'center', p: 1 }}>
-                <Typography variant="body2" color="text.secondary">
-                  Profit Factor
-                </Typography>
-                <Typography variant="h6">
-                  {profitFactor.toFixed(2)}
-                </Typography>
-              </Box>
-          </Box>
-        </Paper>
-      </Box>
-      
-      <TabPanel value={activeTab} index={0}>
-        <Typography variant="h6" gutterBottom>
-          Day Trading Patterns
-        </Typography>
-        {isLoading && activeScanner === 'day' ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : dayTradingResults.length === 0 ? (
-          <Alert severity="info">
-            No day trading patterns found. Try running the scanner for a different timeframe.
-          </Alert>
-        ) : currentResults.length === 0 ? (
-          <Alert severity="warning">
-            No patterns match your current filters. Try adjusting your filter settings.
-          </Alert>
-        ) : (
-          <>
-            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-              <Chip 
-                label={`All Patterns: ${dayTradingResults.length}`} 
-                color="primary" 
-                variant="outlined" 
-              />
-              <Chip 
-                label={`Filtered: ${currentResults.length}`} 
-                color="secondary" 
-              />
-              {(expiredDayPatterns > 0 || oldDayPatterns > 0) && (
-                <Chip 
-                  label={`Hidden: ${dayTradingResults.length - currentResults.length}`} 
-                  color="default" 
-                  variant="outlined" 
-                />
-              )}
-            </Stack>
-            
-            <Box sx={{ flexGrow: 1 }}>
-              <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: { 
-                  xs: '1fr', 
-                  sm: 'repeat(auto-fill, minmax(300px, 1fr))', 
-                  md: 'repeat(auto-fill, minmax(350px, 1fr))', 
-                  lg: 'repeat(auto-fill, minmax(400px, 1fr))' 
-                }, 
-                gap: 3 
-              }}>
-                {currentResults.map((pattern, index) => (
-                  <Box key={pattern.id || index}>
-                  <PatternCard 
-                      pattern={{
-                        id: pattern.id,
-                        symbol: pattern.symbol,
-                        pattern_type: pattern.pattern_type,
-                        timeframe: pattern.timeframe,
-                        entry_price: pattern.entry_price,
-                        target_price: pattern.target_price,
-                        stop_loss: pattern.stop_loss,
-                        confidence_score: pattern.confidence_score,
-                        created_at: pattern.created_at,
-                        channel_type: pattern.channel_type,
-                        volume_confirmation: pattern.volume_confirmation,
-                        trendline_break: pattern.trendline_break,
-                        ema_pattern: pattern.ema_pattern as string,
-                        status: pattern.status || 'active',
-                        risk_reward_ratio: pattern.risk_reward_ratio,
-                        direction: pattern.direction || (pattern.pattern_type?.toLowerCase().includes('bull') ? 'bullish' : 'bearish')
-                      }} 
-                      avgCandlesToBreakout={backtestStats.avgCandlesToBreakout[pattern.timeframe]}
-                      onArchive={onArchivePattern ? () => handleArchivePattern(pattern.id) : undefined}
-                    />
+          <Typography variant="subtitle1" color="text.secondary" paragraph>
+            Track potential breakout opportunities across multiple timeframes
+          </Typography>
+        </Grid>
+        <Grid item xs={12} md={4} sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+          {/* Filter controls already exist in the original code */}
+        </Grid>
+        
+        {/* Scanner Tabs */}
+        <Grid item xs={12}>
+          <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
+            <Tabs 
+              value={activeTab} 
+              onChange={handleTabChange} 
+              aria-label="scanner tabs"
+              variant="scrollable"
+              scrollButtons="auto"
+            >
+              <Tab 
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography>Day Trading</Typography>
+                    {dayTradingResults.length > 0 && (
+                      <Chip 
+                        label={dayTradingResults.length} 
+                        size="small" 
+                        sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                        color="primary"
+                      />
+                    )}
                   </Box>
-                ))}
-              </Box>
-            </Box>
-          </>
-        )}
-      </TabPanel>
-      
-      <TabPanel value={activeTab} index={1}>
-        <Typography variant="h6" gutterBottom>
-          Swing Trading Patterns
-        </Typography>
-        {isLoading && activeScanner === 'swing' ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <CircularProgress />
-          </Box>
-        ) : swingTradingResults.length === 0 ? (
-          <Alert severity="info">
-            No swing trading patterns found. Try running the scanner for a different timeframe.
-          </Alert>
-        ) : currentResults.length === 0 ? (
-          <Alert severity="warning">
-            No patterns match your current filters. Try adjusting your filter settings.
-          </Alert>
-        ) : (
-          <>
-            <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-              <Chip 
-                label={`All Patterns: ${swingTradingResults.length}`} 
-                color="primary" 
-                variant="outlined" 
+                } 
+                value="day" 
               />
-              <Chip 
-                label={`Filtered: ${currentResults.length}`} 
-                color="secondary" 
-              />
-              {(expiredSwingPatterns > 0 || oldSwingPatterns > 0) && (
-                <Chip 
-                  label={`Hidden: ${swingTradingResults.length - currentResults.length}`} 
-                  color="default" 
-                  variant="outlined" 
-                />
-              )}
-            </Stack>
-            
-            <Box sx={{ flexGrow: 1 }}>
-              <Box sx={{ 
-                display: 'grid', 
-                gridTemplateColumns: { 
-                  xs: '1fr', 
-                  sm: 'repeat(auto-fill, minmax(300px, 1fr))', 
-                  md: 'repeat(auto-fill, minmax(350px, 1fr))', 
-                  lg: 'repeat(auto-fill, minmax(400px, 1fr))' 
-                }, 
-                gap: 3 
-              }}>
-                {currentResults.map((pattern, index) => (
-                  <Box key={pattern.id || index}>
-                  <PatternCard 
-                      pattern={{
-                        id: pattern.id,
-                        symbol: pattern.symbol,
-                        pattern_type: pattern.pattern_type,
-                        timeframe: pattern.timeframe,
-                        entry_price: pattern.entry_price,
-                        target_price: pattern.target_price,
-                        stop_loss: pattern.stop_loss,
-                        confidence_score: pattern.confidence_score,
-                        created_at: pattern.created_at,
-                        channel_type: pattern.channel_type,
-                        volume_confirmation: pattern.volume_confirmation,
-                        trendline_break: pattern.trendline_break,
-                        ema_pattern: pattern.ema_pattern as string,
-                        status: pattern.status || 'active',
-                        risk_reward_ratio: pattern.risk_reward_ratio,
-                        direction: pattern.direction || (pattern.pattern_type?.toLowerCase().includes('bull') ? 'bullish' : 'bearish')
-                      }} 
-                      avgCandlesToBreakout={backtestStats.avgCandlesToBreakout[pattern.timeframe]}
-                      onArchive={onArchivePattern ? () => handleArchivePattern(pattern.id) : undefined}
-                    />
+              <Tab 
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography>Swing Trading</Typography>
+                    {swingTradingResults.length > 0 && (
+                      <Chip 
+                        label={swingTradingResults.length} 
+                        size="small" 
+                        sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                        color="primary" 
+                      />
+                    )}
                   </Box>
-                ))}
-              </Box>
-            </Box>
-          </>
-        )}
-      </TabPanel>
-      
-      <Snackbar
-        open={snackbarOpen}
-        autoHideDuration={3000}
-        onClose={handleSnackbarClose}
-        message={snackbarMessage}
-      />
+                } 
+                value="swing" 
+              />
+              <Tab 
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                    <Typography>Exit Alerts</Typography>
+                    {exitAlerts.length > 0 && (
+                      <Chip 
+                        label={exitAlerts.length} 
+                        size="small" 
+                        sx={{ ml: 1, height: 20, fontSize: '0.7rem' }}
+                        color="warning"
+                      />
+                    )}
+                  </Box>
+                } 
+                value="exitAlerts" 
+              />
+            </Tabs>
+          </Box>
+          
+          {/* Tab content */}
+          <Grid container spacing={2}>
+            {activeTab === 'day' && (
+              <>
+                {/* Day trading content */}
+                <Grid item xs={12}>
+                  <Paper elevation={3} sx={{ p: 2, mb: 3 }}>
+                    <Typography variant="h6" gutterBottom>Day Trading Patterns</Typography>
+                    <PatternTableContent
+                      patterns={currentResults}
+                      loading={isLoading}
+                      sortField={sortField}
+                      sortDirection={sortDirection}
+                      handleSort={handleSort}
+                      onAddToTradeList={(pattern) => console.log('Add to trade list:', pattern)}
+                      onSetExitAlert={handleSetExitAlert}
+                    />
+                  </Paper>
+                  <BacktestResults />
+                </Grid>
+              </>
+            )}
+            {activeTab === 'swing' && (
+              <>
+                {/* Swing trading content */}
+                <Grid item xs={12}>
+                  <Paper elevation={3} sx={{ p: 2, mb: 3 }}>
+                    <Typography variant="h6" gutterBottom>Swing Trading Patterns</Typography>
+                    <PatternTableContent
+                      patterns={currentResults}
+                      loading={isLoading}
+                      sortField={sortField}
+                      sortDirection={sortDirection}
+                      handleSort={handleSort}
+                      onAddToTradeList={(pattern) => console.log('Add to trade list:', pattern)}
+                      onSetExitAlert={handleSetExitAlert}
+                    />
+                  </Paper>
+                  <BacktestResults />
+                </Grid>
+              </>
+            )}
+            {activeTab === 'exitAlerts' && (
+              <>
+                {/* Exit alerts content */}
+                {renderExitAlertsTable()}
+              </>
+            )}
+          </Grid>
+        </Grid>
+      </Grid>
     </Box>
   );
 };

@@ -1,4 +1,4 @@
-import { supabase } from '../api/supabaseClient';
+import { supabase } from "../../integrations/supabase/client";
 import { 
   BacktestResult, 
   BacktestStatistics, 

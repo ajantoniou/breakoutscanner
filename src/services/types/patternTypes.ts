@@ -2,6 +2,22 @@
  * Pattern types definition
  */
 
+export interface Candle {
+  timestamp: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+  ema7?: number;
+  ema20?: number;
+  ema50?: number;
+  ema100?: number;
+  ema200?: number;
+  rsi14?: number;
+  atr14?: number;
+}
+
 export interface PatternData {
   id: string;
   symbol: string;
@@ -39,4 +55,28 @@ export interface PatternData {
   horizontal_support?: number;
   horizontal_resistance?: number;
   multi_timeframe_confirmed?: boolean;
+}
+
+export enum PatternDirection {
+  BULLISH = 'bullish',
+  BEARISH = 'bearish'
+}
+
+export enum PatternTimeframe {
+  ONE_MINUTE = '1m',
+  FIVE_MINUTES = '5m',
+  FIFTEEN_MINUTES = '15m',
+  THIRTY_MINUTES = '30m',
+  ONE_HOUR = '1h',
+  FOUR_HOURS = '4h',
+  DAILY = 'D'
+}
+
+export enum PatternType {
+  BULL_FLAG = 'Bull Flag',
+  BEAR_FLAG = 'Bear Flag',
+  CUP_AND_HANDLE = 'Cup and Handle',
+  HEAD_AND_SHOULDERS = 'Head and Shoulders',
+  DOUBLE_BOTTOM = 'Double Bottom',
+  DOUBLE_TOP = 'Double Top'
 }

@@ -1,5 +1,6 @@
 import { Candle } from '@/services/types/patternTypes';
 import PolygonClient from '@/services/api/polygon/client/polygonClient';
+import { multiLevelCache } from '@/services/cache/multiLevelCacheService';
 
 // Define timeframe mapping
 export const TIMEFRAMES = {
@@ -34,8 +35,6 @@ export interface DataMetadata {
  */
 class MarketDataService {
   private polygonClient: PolygonClient;
-  private dataCache: Map<string, { data: any, metadata: DataMetadata }>;
-  private readonly CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
   private readonly REAL_TIME_THRESHOLD = 15 * 60 * 1000; // 15 minutes in milliseconds
   private readonly MARKET_HOURS = {
     start: 9 * 60 + 30, // 9:30 AM in minutes
@@ -46,7 +45,6 @@ class MarketDataService {
 
   constructor() {
     this.polygonClient = new PolygonClient();
-    this.dataCache = new Map();
   }
 
   /**
@@ -88,13 +86,13 @@ class MarketDataService {
     // Different staleness rules based on market status
     if (marketStatus === 'open') {
       // During market hours, data becomes stale more quickly
-      return dataAge > this.CACHE_DURATION;
+      return dataAge > (5 * 60 * 1000); // 5 minutes
     } else if (marketStatus === 'pre-market' || marketStatus === 'after-hours') {
       // During extended hours, data can be cached longer but still needs freshness
-      return dataAge > (this.CACHE_DURATION * 2);
+      return dataAge > (10 * 60 * 1000); // 10 minutes
     } else {
       // When market is closed, data can be cached much longer
-      return dataAge > (this.CACHE_DURATION * 6);
+      return dataAge > (30 * 60 * 1000); // 30 minutes
     }
   }
 
@@ -135,7 +133,7 @@ class MarketDataService {
     const marketStatus = this.getCurrentMarketStatus();
     
     // Base validity period in milliseconds
-    let validityPeriod = this.CACHE_DURATION;
+    let validityPeriod = 5 * 60 * 1000; // 5 minutes
     
     // Adjust validity period based on market status
     if (marketStatus === 'open') {
@@ -198,10 +196,10 @@ class MarketDataService {
    * @param symbol Stock symbol
    * @param timeframe Timeframe string (e.g., '1m', '5m', '1h', '1d')
    * @param limit Maximum number of candles to return
-   * @param from Start date (YYYY-MM-DD)
-   * @param to End date (YYYY-MM-DD)
-   * @param forceRefresh Force refresh from API instead of using cache
-   * @returns Promise with candle data and enhanced metadata
+   * @param from Start date (optional)
+   * @param to End date (optional)
+   * @param forceRefresh Force API refresh (bypass cache)
+   * @returns Promise with candles and metadata
    */
   async fetchCandles(
     symbol: string,
@@ -211,80 +209,62 @@ class MarketDataService {
     to?: string,
     forceRefresh: boolean = false
   ): Promise<{ candles: Candle[], metadata: DataMetadata }> {
-    try {
-      console.log(`Fetching ${timeframe} candles for ${symbol}`);
+    const requestStartTime = Date.now();
+    const cacheKey = this.getCacheKey(symbol, timeframe);
+    
+    // Check multi-level cache first if not forcing refresh
+    if (!forceRefresh) {
+      const cachedResult = await multiLevelCache.getCandles(symbol, timeframe);
       
-      const cacheKey = this.getCacheKey(symbol, timeframe);
-      const cachedData = this.dataCache.get(cacheKey);
-      
-      // Return cached data if it's not stale and force refresh is not requested
-      if (cachedData && !this.isDataStale(cachedData.metadata) && !forceRefresh) {
-        console.log(`Using cached data for ${symbol} (${timeframe})`);
+      if (cachedResult.isCacheValid && cachedResult.candles.length > 0) {
+        const isFresh = !this.isDataStale(cachedResult.metadata!);
         
-        // Update the cached metadata with current market status
-        const updatedMetadata = {
-          ...cachedData.metadata,
-          source: 'cache',
-          marketStatus: this.getCurrentMarketStatus(),
-          dataAge: Date.now() - new Date(cachedData.metadata.fetchedAt).getTime()
-        };
-        
-        return {
-          candles: this.calculateIndicators(cachedData.data),
-          metadata: updatedMetadata
-        };
-      }
-      
-      // Track request start time for performance monitoring
-      const requestStartTime = Date.now();
-      let retryCount = 0;
-      let result;
-      
-      // Try to fetch data with retries
-      try {
-        result = await this.polygonClient.getCandles(symbol, timeframe, limit, from, to);
-      } catch (error) {
-        console.error(`Error on first attempt for ${symbol}, retrying...`);
-        retryCount++;
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        try {
-          result = await this.polygonClient.getCandles(symbol, timeframe, limit, from, to);
-        } catch (secondError) {
-          console.error(`Error on second attempt for ${symbol}, retrying final time...`);
-          retryCount++;
+        if (isFresh) {
+          // Update metadata to reflect cache hit
+          const updatedMetadata = {
+            ...cachedResult.metadata!,
+            source: 'cache',
+            lastUpdated: new Date().toISOString(),
+            dataAge: Date.now() - new Date(cachedResult.metadata!.fetchedAt).getTime(),
+          };
           
-          // Wait longer before final retry
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          result = await this.polygonClient.getCandles(symbol, timeframe, limit, from, to);
+          console.log(`Cache hit for ${symbol} (${timeframe}), age: ${updatedMetadata.dataAge / 1000}s`);
+          return { candles: cachedResult.candles, metadata: updatedMetadata };
         }
       }
+    }
+    
+    // Cache miss or forced refresh, fetch from API
+    try {
+      console.log(`Fetching ${symbol} (${timeframe}) from API...`);
       
-      // Create enhanced metadata
-      const enhancedMetadata = this.createEnhancedMetadata(
-        result.metadata,
-        timeframe,
-        requestStartTime,
-        retryCount
-      );
-      
-      // Update cache with new data
-      this.dataCache.set(cacheKey, {
-        data: result.candles,
-        metadata: enhancedMetadata
-      });
+      // Fetch from API
+      const candleData = await this.polygonClient.getCandles(symbol, timeframe, limit, from, to);
+      let candles = candleData.candles;
       
       // Calculate indicators
-      const candlesWithIndicators = this.calculateIndicators(result.candles);
+      candles = this.calculateIndicators(candles);
       
-      return {
-        candles: candlesWithIndicators,
-        metadata: enhancedMetadata
-      };
-    } catch (error) {
-      console.error(`Error fetching candles for ${symbol}:`, error);
+      // Create enhanced metadata
+      const metadata = this.createEnhancedMetadata(
+        {
+          fetchedAt: new Date().toISOString(),
+          isDelayed: candleData.metadata?.isDelayed || false,
+          source: 'api'
+        },
+        timeframe,
+        requestStartTime
+      );
+      
+      // Store in multi-level cache
+      await multiLevelCache.storeCandles(symbol, timeframe, candles, metadata);
+      
+      // Log data access for analytics
+      this.logDataAccess(symbol, timeframe, metadata);
+      
+      return { candles, metadata };
+    } catch (error: any) {
+      console.error(`Error fetching ${symbol} (${timeframe}):`, error);
       
       // Create error metadata
       const errorMetadata = this.createEnhancedMetadata(
@@ -294,14 +274,27 @@ class MarketDataService {
           source: 'error'
         },
         timeframe,
-        Date.now(),
-        0
+        requestStartTime
       );
       
-      return {
-        candles: [],
-        metadata: errorMetadata
-      };
+      // Still try to get from cache as fallback even if forceRefresh was true
+      const cachedResult = await multiLevelCache.getCandles(symbol, timeframe);
+      
+      if (cachedResult.candles.length > 0) {
+        console.log(`Using cached data as fallback for ${symbol} (${timeframe})`);
+        
+        // Update metadata to reflect cache hit after error
+        const fallbackMetadata = {
+          ...cachedResult.metadata!,
+          source: 'cache_fallback',
+          lastUpdated: new Date().toISOString(),
+          dataAge: Date.now() - new Date(cachedResult.metadata!.fetchedAt).getTime(),
+        };
+        
+        return { candles: cachedResult.candles, metadata: fallbackMetadata };
+      }
+      
+      return { candles: [], metadata: errorMetadata };
     }
   }
 
@@ -444,81 +437,36 @@ class MarketDataService {
   }
 
   /**
-   * Get current price for a symbol with enhanced timestamp validation
+   * Fetch current price for a symbol
    * @param symbol Stock symbol
-   * @param forceRefresh Force refresh from API instead of using cache
-   * @returns Promise with current price and enhanced metadata
+   * @param forceRefresh Force refresh from API
+   * @returns Promise with price and metadata
    */
   async getCurrentPrice(symbol: string, forceRefresh: boolean = false): Promise<{ price: number, metadata: DataMetadata }> {
     try {
-      const cacheKey = this.getCacheKey(symbol, 'current');
-      const cachedData = this.dataCache.get(cacheKey);
-      
-      // Return cached data if it's not stale and force refresh is not requested
-      if (cachedData && !this.isDataStale(cachedData.metadata) && !forceRefresh) {
-        console.log(`Using cached current price for ${symbol}`);
-        
-        // Update the cached metadata with current market status
-        const updatedMetadata = {
-          ...cachedData.metadata,
-          source: 'cache',
-          marketStatus: this.getCurrentMarketStatus(),
-          dataAge: Date.now() - new Date(cachedData.metadata.fetchedAt).getTime()
-        };
-        
-        return {
-          price: cachedData.data,
-          metadata: updatedMetadata
-        };
-      }
-      
-      // Track request start time for performance monitoring
       const requestStartTime = Date.now();
-      let retryCount = 0;
-      let result;
+      const cacheKey = `price_${symbol}`;
       
-      // Try to fetch data with retries
-      try {
-        result = await this.polygonClient.getCurrentPrice(symbol);
-      } catch (error) {
-        console.error(`Error on first attempt for ${symbol} current price, retrying...`);
-        retryCount++;
-        
-        // Wait before retry
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        
-        try {
-          result = await this.polygonClient.getCurrentPrice(symbol);
-        } catch (secondError) {
-          console.error(`Error on second attempt for ${symbol} current price, retrying final time...`);
-          retryCount++;
-          
-          // Wait longer before final retry
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          result = await this.polygonClient.getCurrentPrice(symbol);
-        }
-      }
+      // Use memory cache for price data since it changes frequently
+      // In the future we can integrate this with the multiLevelCache
       
-      // Create enhanced metadata
-      const enhancedMetadata = this.createEnhancedMetadata(
-        result.metadata,
-        'current',
-        requestStartTime,
-        retryCount
+      // Fetch fresh data from API
+      const result = await this.polygonClient.getCurrentPrice(symbol);
+      
+      // Create metadata
+      const metadata = this.createEnhancedMetadata(
+        {
+          fetchedAt: new Date().toISOString(),
+          isDelayed: false, // Assume price data is real-time
+          source: 'api'
+        },
+        '1m', // Treat price data as 1-minute timeframe for caching purposes
+        requestStartTime
       );
       
-      // Update cache with new data
-      this.dataCache.set(cacheKey, {
-        data: result.price,
-        metadata: enhancedMetadata
-      });
-      
-      return {
-        price: result.price,
-        metadata: enhancedMetadata
-      };
+      return { price: result.price, metadata };
     } catch (error) {
-      console.error(`Error getting current price for ${symbol}:`, error);
+      console.error(`Error fetching current price for ${symbol}:`, error);
       
       // Create error metadata
       const errorMetadata = this.createEnhancedMetadata(
@@ -527,15 +475,11 @@ class MarketDataService {
           isDelayed: true,
           source: 'error'
         },
-        'current',
-        Date.now(),
-        0
+        '1m',
+        Date.now()
       );
       
-      return {
-        price: 0,
-        metadata: errorMetadata
-      };
+      return { price: 0, metadata: errorMetadata };
     }
   }
 
@@ -603,20 +547,22 @@ class MarketDataService {
   }
 
   /**
-   * Clear cache for a specific symbol and timeframe
+   * Clear specific cache entry
    * @param symbol Stock symbol
    * @param timeframe Timeframe string
    */
   clearCache(symbol: string, timeframe: string): void {
     const cacheKey = this.getCacheKey(symbol, timeframe);
-    this.dataCache.delete(cacheKey);
+    multiLevelCache.clearCache('candles', cacheKey);
   }
 
   /**
-   * Clear all cache
+   * Clear all cache entries
    */
   clearAllCache(): void {
-    this.dataCache.clear();
+    // Currently, the multi-level cache doesn't support clearAll
+    // This is intentional to avoid accidentally clearing important data
+    console.log('Clear all cache not supported in multi-level cache');
   }
 
   /**
@@ -752,7 +698,7 @@ class MarketDataService {
   /**
    * Get data freshness status with detailed information
    * @param metadata Data metadata
-   * @returns Object with status information
+   * @returns Status information with details
    */
   getDataFreshnessStatus(metadata: DataMetadata): { 
     status: DataFreshnessStatus, 
@@ -764,90 +710,52 @@ class MarketDataService {
       marketStatus: string
     }
   } {
-    if (!metadata) {
-      return { 
-        status: 'error', 
-        message: 'No data available',
-        details: {
-          age: 'Unknown',
-          source: 'None',
-          fetchTime: 'Unknown',
-          marketStatus: 'Unknown'
-        }
-      };
+    // Get age in seconds
+    const ageMs = metadata.dataAge || (Date.now() - new Date(metadata.fetchedAt).getTime());
+    const ageSec = Math.floor(ageMs / 1000);
+    
+    // Format age for display
+    let ageStr;
+    if (ageSec < 60) {
+      ageStr = `${ageSec} sec`;
+    } else if (ageSec < 3600) {
+      ageStr = `${Math.floor(ageSec / 60)} min`;
+    } else {
+      ageStr = `${Math.floor(ageSec / 3600)} hr`;
     }
-
+    
+    // Determine freshness status
+    let status: DataFreshnessStatus;
+    let message: string;
+    
     if (metadata.source === 'error') {
-      return { 
-        status: 'error', 
-        message: 'Error fetching data',
-        details: {
-          age: 'Unknown',
-          source: metadata.source || 'error',
-          fetchTime: this.formatTimestamp(metadata.fetchedAt),
-          marketStatus: metadata.marketStatus || 'Unknown'
-        }
-      };
+      status = 'error';
+      message = 'Failed to fetch data';
+    } else if (this.isDataStale(metadata)) {
+      status = 'stale';
+      message = `Data is stale (${ageStr} old)`;
+    } else if (metadata.source === 'cache' || metadata.source === 'cache_fallback') {
+      status = 'cached';
+      message = `Cached data (${ageStr} old)`;
+    } else if (metadata.isDelayed) {
+      status = 'delayed';
+      message = `Delayed data (${ageStr} old)`;
+    } else {
+      status = 'real-time';
+      message = `Real-time data (${ageStr} old)`;
     }
-
-    // Calculate data age
-    const fetchedAt = new Date(metadata.fetchedAt).getTime();
-    const currentTime = Date.now();
-    const dataAge = currentTime - fetchedAt;
-    const ageMinutes = Math.floor(dataAge / (60 * 1000));
-    const ageSeconds = Math.floor((dataAge % (60 * 1000)) / 1000);
-    const ageString = ageMinutes > 0 
-      ? `${ageMinutes}m ${ageSeconds}s` 
-      : `${ageSeconds}s`;
-
-    if (metadata.source === 'cache') {
-      // Check if cached data is stale
-      if (this.isDataStale(metadata)) {
-        return { 
-          status: 'stale', 
-          message: `Stale data from ${ageString} ago`,
-          details: {
-            age: ageString,
-            source: 'Cache (stale)',
-            fetchTime: this.formatTimestamp(metadata.fetchedAt),
-            marketStatus: metadata.marketStatus || this.getCurrentMarketStatus()
-          }
-        };
-      }
-      
-      return { 
-        status: 'cached', 
-        message: `Cached data from ${ageString} ago`,
-        details: {
-          age: ageString,
-          source: 'Cache',
-          fetchTime: this.formatTimestamp(metadata.fetchedAt),
-          marketStatus: metadata.marketStatus || this.getCurrentMarketStatus()
-        }
-      };
-    }
-
-    if (metadata.isDelayed || dataAge > this.REAL_TIME_THRESHOLD) {
-      return { 
-        status: 'delayed', 
-        message: `15-minute delayed data (${ageString} old)`,
-        details: {
-          age: ageString,
-          source: metadata.source || 'API (delayed)',
-          fetchTime: this.formatTimestamp(metadata.fetchedAt),
-          marketStatus: metadata.marketStatus || this.getCurrentMarketStatus()
-        }
-      };
-    }
-
-    return { 
-      status: 'real-time', 
-      message: `Real-time data (${ageString} old)`,
+    
+    // Format fetch time
+    const fetchTime = new Date(metadata.fetchedAt).toLocaleTimeString();
+    
+    return {
+      status,
+      message,
       details: {
-        age: ageString,
-        source: metadata.source || 'API (real-time)',
-        fetchTime: this.formatTimestamp(metadata.fetchedAt),
-        marketStatus: metadata.marketStatus || this.getCurrentMarketStatus()
+        age: ageStr,
+        source: metadata.source,
+        fetchTime,
+        marketStatus: metadata.marketStatus || 'unknown'
       }
     };
   }
@@ -866,4 +774,4 @@ class MarketDataService {
   }
 }
 
-export default MarketDataService;
+export default new MarketDataService();

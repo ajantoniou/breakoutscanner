@@ -9,7 +9,9 @@ import {
   Divider,
   Chip,
   Grid,
-  alpha
+  alpha,
+  Stack,
+  IconButton
 } from '@mui/material';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import TrendingDownIcon from '@mui/icons-material/TrendingDown';
@@ -17,30 +19,27 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import BarChartIcon from '@mui/icons-material/BarChart';
+import ExitToAppIcon from '@mui/icons-material/ExitToApp';
+import ArchiveIcon from '@mui/icons-material/Archive';
+import TimelineIcon from '@mui/icons-material/Timeline';
 import { formatDistanceToNowStrict } from 'date-fns';
+import { PatternData } from '../../services/types/patternTypes';
 
 interface PatternCardProps {
-  pattern: {
-    id: string;
-    symbol: string;
-    pattern_type: string;
-    timeframe: string;
-    entry_price: number;
-    target_price: number;
-    stop_loss?: number;
-    confidence_score: number;
-    created_at: string;
-    channel_type?: string;
-    volume_confirmation?: boolean;
-    trendline_break?: boolean;
-    ema_pattern?: string;
-    status: string;
-    risk_reward_ratio?: number;
-  };
+  pattern: PatternData;
   avgCandlesToBreakout?: number;
+  onViewChart?: (pattern: PatternData) => void;
+  onArchive?: (pattern: PatternData) => void;
+  onSetExitAlert?: (pattern: PatternData) => void;
 }
 
-const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout }) => {
+const PatternCard: React.FC<PatternCardProps> = ({ 
+  pattern, 
+  avgCandlesToBreakout, 
+  onViewChart, 
+  onArchive,
+  onSetExitAlert
+}) => {
   // Format entry, target, and stop loss prices
   const formatPrice = (price: number) => {
     return price < 10 ? price.toFixed(3) : price.toFixed(2);
@@ -124,6 +123,20 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
     
     // Format date for display
     return expectedBreakoutTime.toLocaleString();
+  };
+
+  // Format percentage with + sign for positive values
+  const formatPercentage = (value: number): string => {
+    return value > 0 ? `+${value.toFixed(2)}%` : `${value.toFixed(2)}%`;
+  };
+
+  // Determine status color
+  const getStatusColor = (status: string) => {
+    const statusLower = status.toLowerCase();
+    if (statusLower === 'active') return 'success';
+    if (statusLower === 'completed') return 'info';
+    if (statusLower === 'failed') return 'error';
+    return 'default';
   };
 
   return (
@@ -234,7 +247,7 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
             <Chip
               label={pattern.status}
               size="small"
-              color={pattern.status === 'Active' ? 'success' : pattern.status === 'Completed' ? 'primary' : 'default'}
+              color={getStatusColor(pattern.status)}
               sx={{ fontWeight: 'medium', fontSize: '0.75rem', height: 24 }}
             />
           </Grid>
@@ -373,31 +386,43 @@ const PatternCard: React.FC<PatternCardProps> = ({ pattern, avgCandlesToBreakout
         </Typography>
       </CardContent>
       
-      <CardActions sx={{ p: 2, pt: 0 }}>
-        <Button 
-          size="small" 
-          color="primary" 
-          variant="outlined"
-          sx={{ 
-            borderRadius: 2,
-            flex: 1,
-            mr: 1
-          }}
-        >
-          View Chart
-        </Button>
-        <Button 
-          size="small" 
-          color="secondary" 
-          variant="contained"
-          endIcon={<ArrowForwardIcon />}
-          sx={{ 
-            borderRadius: 2,
-            flex: 1
-          }}
-        >
-          Backtest
-        </Button>
+      <CardActions sx={{ p: 2, pt: 0, display: 'flex', gap: 1 }}>
+        <Stack direction="row" spacing={1}>
+          {onViewChart && (
+            <Button 
+              size="small" 
+              variant="outlined" 
+              startIcon={<TimelineIcon />}
+              onClick={() => onViewChart(pattern)}
+            >
+              View Chart
+            </Button>
+          )}
+          
+          <Box>
+            {onSetExitAlert && (
+              <IconButton 
+                size="small" 
+                color="warning"
+                onClick={() => onSetExitAlert(pattern)}
+                title="Set Exit Alert"
+              >
+                <ExitToAppIcon />
+              </IconButton>
+            )}
+            
+            {onArchive && (
+              <IconButton 
+                size="small" 
+                color="default"
+                onClick={() => onArchive(pattern)}
+                title="Archive Pattern"
+              >
+                <ArchiveIcon />
+              </IconButton>
+            )}
+          </Box>
+        </Stack>
       </CardActions>
     </Card>
   );
