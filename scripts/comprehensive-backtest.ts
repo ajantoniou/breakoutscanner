@@ -3,24 +3,22 @@
  * Runs backtests on various assets and timeframes
  */
 
-import { fetchHistoricalData } from '../src/services/api/marketData/dataService';
-import { 
-  detectBullFlag,
-  detectBearFlag,
-  detectAscendingTriangle,
-  detectDescendingTriangle
-} from '../src/services/api/marketData/patternDetection/patternDetectionService';
-import { detectBreakout } from '../src/services/api/marketData/patternDetection/breakoutDetector';
-import { backtestSignals } from '../src/services/backtesting/backtestingFramework';
+import marketDataService from '../src/services/api/marketData/dataService';
+import patternDetectionService from '../src/services/api/marketData/patternDetection/patternDetectionService';
+import { Candle, PatternData } from '../src/services/types/patternTypes';
+import { DataMetadata } from '../src/services/api/marketData/dataService';
+import { backtestSignals, BacktestResult } from '../src/services/backtesting/backtestingFramework';
 import { 
   calculatePerformanceMetrics,
   analyzePatternPerformance,
   analyzeTimeframePerformance,
-  generatePerformanceSummary
+  generatePerformanceSummary,
+  TimeframePerformance,
+  PerformanceMetrics
 } from '../src/services/backtesting/performanceAnalysis';
 import { applyOptimizations } from '../src/services/optimization/optimizationService';
-import fs from 'fs';
-import path from 'path';
+import * as fs from 'fs';
+import * as path from 'path';
 
 // Define assets to test
 const assets = [
@@ -51,8 +49,8 @@ const dateRanges = [
   { name: 'Recent Market', start: '2023-07-01', end: '2023-12-31' }
 ];
 
-// Create results directory
-const resultsDir = path.join(__dirname, '../backtest-results');
+// Create results directory - use relative path
+const resultsDir = path.resolve('./backtest-results');
 if (!fs.existsSync(resultsDir)) {
   fs.mkdirSync(resultsDir);
 }
@@ -64,8 +62,8 @@ async function runComprehensiveBacktests() {
   console.log('Starting comprehensive backtesting...');
   
   // Store all results
-  const allBacktestResults = [];
-  const allPatterns = [];
+  const allBacktestResults: BacktestResult[] = [];
+  const allPatterns: PatternData[] = [];
   
   // Create summary file
   const summaryFile = path.join(resultsDir, 'backtest-summary.txt');
@@ -98,7 +96,7 @@ async function runComprehensiveBacktests() {
         
         try {
           // Fetch historical data
-          const data = await fetchHistoricalData(asset, timeframe, 500, dateRange.start, dateRange.end);
+          const { candles: data, metadata } = await marketDataService.fetchCandles(asset, timeframe, 500, dateRange.start, dateRange.end);
           
           if (!data || data.length < 50) {
             console.log(`Insufficient data for ${asset} on ${timeframe} timeframe`);
@@ -106,82 +104,24 @@ async function runComprehensiveBacktests() {
           }
           
           // Detect patterns
-          const bullFlags = [];
-          const bearFlags = [];
-          const ascendingTriangles = [];
-          const descendingTriangles = [];
-          const breakouts = [];
+          const { patterns: detectedPatterns, metadata: detectionMetadata } = await patternDetectionService.detectPatterns(asset, data, timeframe, metadata);
           
-          // Process data in chunks to simulate real-time detection
-          for (let i = 50; i < data.length; i += 10) {
-            const chunk = data.slice(0, i);
-            
-            // Detect bull flags
-            const bullFlag = detectBullFlag(chunk);
-            if (bullFlag) {
-              bullFlag.id = `${asset}-${timeframe}-bull-${i}`;
-              bullFlag.createdAt = chunk[chunk.length - 1].timestamp;
-              bullFlags.push(bullFlag);
-              allPatterns.push(bullFlag);
-            }
-            
-            // Detect bear flags
-            const bearFlag = detectBearFlag(chunk);
-            if (bearFlag) {
-              bearFlag.id = `${asset}-${timeframe}-bear-${i}`;
-              bearFlag.createdAt = chunk[chunk.length - 1].timestamp;
-              bearFlags.push(bearFlag);
-              allPatterns.push(bearFlag);
-            }
-            
-            // Detect ascending triangles
-            const ascTriangle = detectAscendingTriangle(chunk);
-            if (ascTriangle) {
-              ascTriangle.id = `${asset}-${timeframe}-asc-${i}`;
-              ascTriangle.createdAt = chunk[chunk.length - 1].timestamp;
-              ascendingTriangles.push(ascTriangle);
-              allPatterns.push(ascTriangle);
-            }
-            
-            // Detect descending triangles
-            const descTriangle = detectDescendingTriangle(chunk);
-            if (descTriangle) {
-              descTriangle.id = `${asset}-${timeframe}-desc-${i}`;
-              descTriangle.createdAt = chunk[chunk.length - 1].timestamp;
-              descendingTriangles.push(descTriangle);
-              allPatterns.push(descTriangle);
-            }
-            
-            // Detect breakouts
-            const breakout = detectBreakout(chunk, timeframe);
-            if (breakout) {
-              breakout.id = `${asset}-${timeframe}-breakout-${i}`;
-              breakout.createdAt = chunk[chunk.length - 1].timestamp;
-              breakouts.push(breakout);
-              allPatterns.push(breakout);
-            }
-          }
+          // Add detected patterns to overall list
+          allPatterns.push(...detectedPatterns);
           
-          // Combine all patterns
-          const patterns = [
-            ...bullFlags,
-            ...bearFlags,
-            ...ascendingTriangles,
-            ...descendingTriangles,
-            ...breakouts
-          ];
+          const patternsToBacktest = detectedPatterns;
           
-          if (patterns.length === 0) {
+          if (patternsToBacktest.length === 0) {
             console.log(`No patterns detected for ${asset} on ${timeframe} timeframe`);
             continue;
           }
           
           // Backtest patterns
-          const backtestResults = await backtestSignals(patterns, 30, data);
+          const backtestResults = await backtestSignals(patternsToBacktest, 30);
           allBacktestResults.push(...backtestResults);
           
           // Calculate performance metrics
-          const metrics = calculatePerformanceMetrics(backtestResults);
+          const metrics: PerformanceMetrics = calculatePerformanceMetrics(backtestResults);
           
           // Analyze pattern performance
           const patternPerformance = analyzePatternPerformance(backtestResults);
@@ -192,7 +132,7 @@ async function runComprehensiveBacktests() {
             asset,
             timeframe,
             dateRange,
-            patterns: patterns.length,
+            patternsDetected: patternsToBacktest.length,
             backtestResults,
             metrics,
             patternPerformance
@@ -200,10 +140,10 @@ async function runComprehensiveBacktests() {
           
           // Append to summary
           fs.appendFileSync(summaryFile, `${asset} (${timeframe}):\n`);
-          fs.appendFileSync(summaryFile, `  Patterns detected: ${patterns.length}\n`);
+          fs.appendFileSync(summaryFile, `  Patterns detected: ${patternsToBacktest.length}\n`);
           fs.appendFileSync(summaryFile, `  Win rate: ${(metrics.winRate * 100).toFixed(2)}%\n`);
           fs.appendFileSync(summaryFile, `  Average profit/loss: ${metrics.averageProfitLoss.toFixed(2)}%\n`);
-          fs.appendFileSync(summaryFile, `  Profit factor: ${metrics.profitFactor.toFixed(2)}\n\n`);
+          fs.appendFileSync(summaryFile, `  Profit Factor: ${metrics.profitFactor.toFixed(2)}\n\n`);
           
           console.log(`Completed backtest for ${asset} on ${timeframe} timeframe`);
         } catch (error) {
@@ -220,7 +160,7 @@ async function runComprehensiveBacktests() {
       return resultDate >= startDate && resultDate <= endDate;
     });
     
-    const timeframePerformance = analyzeTimeframePerformance(dateRangeResults);
+    const timeframePerformance: TimeframePerformance[] = analyzeTimeframePerformance(dateRangeResults);
     
     // Save timeframe performance
     const timeframeFile = path.join(dateRangeDir, 'timeframe-performance.json');
@@ -228,11 +168,11 @@ async function runComprehensiveBacktests() {
     
     // Append to summary
     fs.appendFileSync(summaryFile, `\nTimeframe Performance for ${dateRange.name}:\n`);
-    Object.entries(timeframePerformance).forEach(([timeframe, metrics]) => {
-      fs.appendFileSync(summaryFile, `  ${timeframe}:\n`);
-      fs.appendFileSync(summaryFile, `    Win rate: ${(metrics.winRate * 100).toFixed(2)}%\n`);
-      fs.appendFileSync(summaryFile, `    Average profit/loss: ${metrics.averageProfitLoss.toFixed(2)}%\n`);
-      fs.appendFileSync(summaryFile, `    Profit factor: ${metrics.profitFactor.toFixed(2)}\n\n`);
+    timeframePerformance.forEach((tfMetrics) => {
+      fs.appendFileSync(summaryFile, `  ${tfMetrics.timeframe}:\n`);
+      fs.appendFileSync(summaryFile, `    Win rate: ${(tfMetrics.winRate * 100).toFixed(2)}%\n`);
+      fs.appendFileSync(summaryFile, `    Average profit/loss: ${tfMetrics.averageProfitLoss.toFixed(2)}%\n`);
+      fs.appendFileSync(summaryFile, `    Risk/Reward Ratio: ${tfMetrics.riskRewardRatio.toFixed(2)}\n\n`);
     });
   }
   
@@ -242,9 +182,13 @@ async function runComprehensiveBacktests() {
   fs.writeFileSync(overallSummaryFile, overallSummary);
   
   // Apply optimizations
-  const optimizationResults = applyOptimizations(allPatterns, allBacktestResults);
-  const optimizationFile = path.join(resultsDir, 'optimization-results.json');
-  fs.writeFileSync(optimizationFile, JSON.stringify(optimizationResults, null, 2));
+  try {
+    const optimizationResults = applyOptimizations(allPatterns, allBacktestResults);
+    const optimizationFile = path.join(resultsDir, 'optimization-results.json');
+    fs.writeFileSync(optimizationFile, JSON.stringify(optimizationResults, null, 2));
+  } catch (optError) {
+    console.error("Error during optimization step:", optError);
+  }
   
   console.log('Comprehensive backtesting completed!');
   console.log(`Results saved to ${resultsDir}`);

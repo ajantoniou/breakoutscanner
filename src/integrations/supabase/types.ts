@@ -107,6 +107,54 @@ export type Database = {
         }
         Relationships: []
       }
+      detected_patterns: {
+        Row: {
+          confidence_score: number
+          created_at: string | null
+          detected_at: string
+          entry_price: number
+          id: number
+          multi_timeframe_confirmation: boolean
+          pattern_data: Json
+          pattern_type: string
+          risk_reward_ratio: number
+          stop_loss: number
+          symbol: string
+          target_price: number
+          timeframe: string
+        }
+        Insert: {
+          confidence_score: number
+          created_at?: string | null
+          detected_at: string
+          entry_price: number
+          id?: number
+          multi_timeframe_confirmation?: boolean
+          pattern_data: Json
+          pattern_type: string
+          risk_reward_ratio: number
+          stop_loss: number
+          symbol: string
+          target_price: number
+          timeframe: string
+        }
+        Update: {
+          confidence_score?: number
+          created_at?: string | null
+          detected_at?: string
+          entry_price?: number
+          id?: number
+          multi_timeframe_confirmation?: boolean
+          pattern_data?: Json
+          pattern_type?: string
+          risk_reward_ratio?: number
+          stop_loss?: number
+          symbol?: string
+          target_price?: number
+          timeframe?: string
+        }
+        Relationships: []
+      }
       historical_prices: {
         Row: {
           close: number
@@ -143,6 +191,108 @@ export type Database = {
           symbol?: string
           timeframe?: string
           volume?: number
+        }
+        Relationships: []
+      }
+      market_data_cache: {
+        Row: {
+          atr14: number | null
+          cache_key: string
+          close: number
+          created_at: string | null
+          ema100: number | null
+          ema20: number | null
+          ema200: number | null
+          ema50: number | null
+          ema7: number | null
+          high: number
+          id: number
+          index: number
+          low: number
+          open: number
+          rsi14: number | null
+          symbol: string
+          timestamp: string
+          volume: number
+        }
+        Insert: {
+          atr14?: number | null
+          cache_key: string
+          close: number
+          created_at?: string | null
+          ema100?: number | null
+          ema20?: number | null
+          ema200?: number | null
+          ema50?: number | null
+          ema7?: number | null
+          high: number
+          id?: number
+          index: number
+          low: number
+          open: number
+          rsi14?: number | null
+          symbol: string
+          timestamp: string
+          volume: number
+        }
+        Update: {
+          atr14?: number | null
+          cache_key?: string
+          close?: number
+          created_at?: string | null
+          ema100?: number | null
+          ema20?: number | null
+          ema200?: number | null
+          ema50?: number | null
+          ema7?: number | null
+          high?: number
+          id?: number
+          index?: number
+          low?: number
+          open?: number
+          rsi14?: number | null
+          symbol?: string
+          timestamp?: string
+          volume?: number
+        }
+        Relationships: []
+      }
+      market_data_metadata: {
+        Row: {
+          cache_key: string
+          created_at: string | null
+          fetched_at: string
+          id: number
+          is_delayed: boolean
+          request_duration: number | null
+          retry_count: number | null
+          source: string
+          symbol: string
+          timeframe: string
+        }
+        Insert: {
+          cache_key: string
+          created_at?: string | null
+          fetched_at: string
+          id?: number
+          is_delayed?: boolean
+          request_duration?: number | null
+          retry_count?: number | null
+          source: string
+          symbol: string
+          timeframe: string
+        }
+        Update: {
+          cache_key?: string
+          created_at?: string | null
+          fetched_at?: string
+          id?: number
+          is_delayed?: boolean
+          request_duration?: number | null
+          retry_count?: number | null
+          source?: string
+          symbol?: string
+          timeframe?: string
         }
         Relationships: []
       }

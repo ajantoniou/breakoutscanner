@@ -7,7 +7,7 @@ let useComprehensiveBacktest = false;
 
 try {
   // Try to import the comprehensive backtesting script
-  require('./GIT REPO/scripts/comprehensive-backtest');
+  require('./comprehensive-backtest');
   useComprehensiveBacktest = true;
   console.log("Using comprehensive backtest script");
 } catch (err) {
@@ -16,7 +16,7 @@ try {
 }
 
 // Get path to the project root
-const projectRoot = path.join(__dirname, 'GIT REPO');
+const projectRoot = path.resolve(__dirname, '..');
 
 // If we're using the comprehensive backtest
 if (useComprehensiveBacktest) {
@@ -24,14 +24,14 @@ if (useComprehensiveBacktest) {
   console.log("To run the comprehensive backtest, use the following command:");
   console.log(`cd ${projectRoot} && npm run backtest`);
   console.log("Or use the shell script:");
-  console.log(`sh ${projectRoot}/run-backtest.sh`);
+  console.log(`sh ${projectRoot}/scripts/run-backtest.sh`);
   process.exit(0);
 }
 
 // Otherwise continue with basic backtest
 try {
   // Import the PatternBacktester - adjust path based on project structure
-  const { default: PatternBacktester } = require('./GIT REPO/src/services/backtesting/patternBacktester');
+  const { default: PatternBacktester } = require('../src/services/backtesting/patternBacktester');
 
   // Get the singleton instance
   const backtester = PatternBacktester.getInstance();

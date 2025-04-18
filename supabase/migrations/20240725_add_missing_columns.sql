@@ -87,10 +87,10 @@ ALTER TABLE market_data_metadata ENABLE ROW LEVEL SECURITY;
 -- Allow read access for authenticated users
 CREATE POLICY IF NOT EXISTS "Allow authenticated users to read market_data_cache"
 ON market_data_cache FOR SELECT
-FOR authenticated
+TO authenticated
 USING (true);
 
 CREATE POLICY IF NOT EXISTS "Allow authenticated users to read market_data_metadata"
 ON market_data_metadata FOR SELECT
-FOR authenticated
+TO authenticated
 USING (true); 

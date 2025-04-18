@@ -1,0 +1,244 @@
+{
+  "overall": {
+    "totalTrades": 100,
+    "wins": 0,
+    "losses": 0,
+    "winRate": 0,
+    "avgProfitPercent": 0,
+    "avgLossPercent": 0,
+    "profitFactor": 0,
+    "avgCandlesToBreakout": 0
+  },
+  "byPatternType": [
+    {
+      "stats": {
+        "totalTrades": 100,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "avgProfitPercent": 0,
+        "avgLossPercent": 0,
+        "profitFactor": 0,
+        "avgCandlesToBreakout": 0
+      }
+    }
+  ],
+  "byTimeframe": [
+    {
+      "stats": {
+        "totalTrades": 100,
+        "wins": 0,
+        "losses": 0,
+        "winRate": 0,
+        "avgProfitPercent": 0,
+        "avgLossPercent": 0,
+        "profitFactor": 0,
+        "avgCandlesToBreakout": 0
+      }
+    }
+  ],
+  "topOpportunities": [],
+  "mostProfitable": [],
+  "rawData": [
+    {
+      "id": "24e1e562-85d8-436d-bf53-ff48e661b28a",
+      "pattern_id": "ed393d64-bd9a-4078-9a5f-d275afa2b43e",
+      "success": false,
+      "profit_loss_percent": 5.54,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:57.532+00:00"
+    },
+    {
+      "id": "63123d8c-2765-4fcd-8391-acfb0cb219a4",
+      "pattern_id": "7e82b352-198b-4151-ad1b-b736fc241585",
+      "success": true,
+      "profit_loss_percent": 3.96,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:57.418+00:00"
+    },
+    {
+      "id": "53c9b938-1809-4dc0-9fe5-55583b8a280d",
+      "pattern_id": "224ac03d-09aa-41bd-bdd7-1aee9b649fd0",
+      "success": true,
+      "profit_loss_percent": 6.59,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:57.293+00:00"
+    },
+    {
+      "id": "6331c6a1-53e5-4a78-a883-7116639fc8be",
+      "pattern_id": "10e5a2ae-dd31-42f5-b235-1d07c3d1a468",
+      "success": false,
+      "profit_loss_percent": 7.58,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:57.162+00:00"
+    },
+    {
+      "id": "931f1d16-cf3c-4b4d-a852-dffdde16f680",
+      "pattern_id": "17638f9c-29e1-4208-a235-24ec2b97c039",
+      "success": false,
+      "profit_loss_percent": 6.54,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:57.044+00:00"
+    },
+    {
+      "id": "e4cc1243-73af-4b53-8d7b-94d6522ee5d6",
+      "pattern_id": "8e4e4df1-e1d4-4227-9639-e7ab8f71ff2d",
+      "success": false,
+      "profit_loss_percent": 5.34,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:56.798+00:00"
+    },
+    {
+      "id": "2faff2f3-1af4-4a6e-91dc-df1c631d7e05",
+      "pattern_id": "a860ea56-d18f-4c1d-9a38-73327389ec64",
+      "success": true,
+      "profit_loss_percent": 3.57,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:56.689+00:00"
+    },
+    {
+      "id": "e42f2ee6-4c12-4f63-b0c0-3420f9de267c",
+      "pattern_id": "cc98ffc0-6688-440b-b9c9-cac0978b54cf",
+      "success": true,
+      "profit_loss_percent": 6.19,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:56.556+00:00"
+    },
+    {
+      "id": "a79f3c38-7a63-4d9d-87b2-543557a1bed6",
+      "pattern_id": "95875ac9-986d-408e-9b0e-06b374de6442",
+      "success": false,
+      "profit_loss_percent": 7.38,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:56.444+00:00"
+    },
+    {
+      "id": "4e02a80f-5945-4f2f-a8af-63f4c14d2f86",
+      "pattern_id": "757f2b08-5d6b-4e51-ae92-76622d7a4030",
+      "success": false,
+      "profit_loss_percent": 6.34,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:56.322+00:00"
+    },
+    {
+      "id": "c83c872c-6f71-490d-8889-3d274a9e67f2",
+      "pattern_id": "5a10ade0-e7e7-4283-b34b-72dc0d2ab4b7",
+      "success": false,
+      "profit_loss_percent": 7.43,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:56.099+00:00"
+    },
+    {
+      "id": "eca931da-b1a0-453c-a730-94517af4bfba",
+      "pattern_id": "268534e2-9c68-4e92-8a6f-fe28f37845de",
+      "success": true,
+      "profit_loss_percent": 1.72,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.971+00:00"
+    },
+    {
+      "id": "ca02791a-6b73-4050-a9ea-f59cd6cac4a2",
+      "pattern_id": "b6dd48bf-e533-4371-8df9-ff5fd532f382",
+      "success": true,
+      "profit_loss_percent": 4.3,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.85+00:00"
+    },
+    {
+      "id": "75bf6803-c7a6-4cdc-b4ff-abafb8e8484b",
+      "pattern_id": "5afbc71a-ae99-419c-a448-cc3706fe272e",
+      "success": false,
+      "profit_loss_percent": 9.51,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.72+00:00"
+    },
+    {
+      "id": "d28fec60-03bd-4dd5-b598-3523392846ed",
+      "pattern_id": "0ef60fad-74c0-40a1-acad-20c44aa1d537",
+      "success": false,
+      "profit_loss_percent": 8.45,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.6+00:00"
+    },
+    {
+      "id": "909ea308-def2-4469-9e5f-1a32e77f4863",
+      "pattern_id": "507454aa-a194-4fdc-b6a6-7e0d0feae9d2",
+      "success": false,
+      "profit_loss_percent": 5.3,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.367+00:00"
+    },
+    {
+      "id": "f6a7c21b-1edd-49d0-8e1e-3cf8398c88d3",
+      "pattern_id": "47f83fc5-276e-478b-ab54-de4e14f67f58",
+      "success": true,
+      "profit_loss_percent": 6.93,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.258+00:00"
+    },
+    {
+      "id": "6342fdfa-bb10-4796-8649-1e0438dab0c1",
+      "pattern_id": "bb0d978e-ea1e-4f2a-adfc-c9035467cab9",
+      "success": true,
+      "profit_loss_percent": 9.64,
+      "days_to_breakout": 1,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:55.097+00:00"
+    },
+    {
+      "id": "cb3cc313-9f27-478c-90b9-4cbe2d4d977a",
+      "pattern_id": "5b32b172-85a6-4727-bfb8-8f6faa2873d9",
+      "success": false,
+      "profit_loss_percent": 7.34,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:54.978+00:00"
+    },
+    {
+      "id": "9fac50cf-3dfc-425a-8b35-ff8707ceaedf",
+      "pattern_id": "17b2b232-7daf-4b8a-8ae3-dac85ff1bc38",
+      "success": false,
+      "profit_loss_percent": 6.3,
+      "days_to_breakout": 0,
+      "days_to_target": null,
+      "max_drawdown": null,
+      "created_at": "2025-04-08T19:37:54.864+00:00"
+    }
+  ]
+}

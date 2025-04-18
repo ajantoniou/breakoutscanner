@@ -12,11 +12,15 @@
     "moduleDetection": "force",
     "noEmit": true,
 
+    /* Added for compatibility */
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+
     /* Linting */
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "scripts/**/*.ts"]
 }
